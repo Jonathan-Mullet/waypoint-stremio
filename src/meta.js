@@ -109,6 +109,7 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
 
   const baseMeta = await _getCinemetaMeta('series', imdbId);
   if (!baseMeta) return null;
+  const minutes = _runtimeMin(baseMeta.runtime);
 
   const season = chosen.season;
   const number = isResume ? chosen.episode : chosen.number;
@@ -118,7 +119,6 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
 
   let resumeLine;
   if (isResume) {
-    const minutes = _runtimeMin(baseMeta.runtime);
     const resumeSecs = minutes ? (chosen.progress / 100) * minutes * 60 : null;
     const timeHint = resumeSecs != null ? ` — resume ~${fmtResumeTime(resumeSecs)}` : '';
     resumeLine = `▶ Trakt — Resume ${label}${epTitle} · ${Math.round(chosen.progress)}%${timeHint}`;
@@ -129,17 +129,29 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
   const meta = { ...baseMeta };
   meta.description = `${resumeLine}\n\n${baseMeta.description || ''}`.trim();
 
-  // Mark the target episode in the episode list so it's obvious which one to pick.
-  // CRITICAL: modify the existing `name` field — do NOT add `title`. Stremio's
+  // Annotate the episode list itself so the resume hint travels with each episode —
+  // users shouldn't have to memorise the show-level hint. Every in-progress episode
+  // gets its own "· 60% — resume ~14m"; the up-next target also gets the ▶ prefix.
+  // CRITICAL: only ever modify the existing `name` field — never add `title`. Stremio's
   // Video struct aliases `title`→`name` (same field); having BOTH triggers a serde
-  // duplicate-field error that fails the entire series meta and makes Stremio fall
-  // back to Cinemeta (hiding the hint). Cinemeta sends episode titles in `name`.
+  // duplicate-field error that fails the entire series meta (Stremio then falls back
+  // to Cinemeta, hiding the hint). Cinemeta sends episode titles in `name`.
+  const resumeByEp = new Map(); // "season:episode" → "60% — resume ~14m"
+  for (const p of playback) {
+    if (p.type !== 'episode' || p.imdb !== imdbId || !(p.progress > 0 && p.progress < 100)) continue;
+    const secs = minutes ? (p.progress / 100) * minutes * 60 : null;
+    const timeHint = secs != null ? ` — resume ~${fmtResumeTime(secs)}` : '';
+    resumeByEp.set(`${p.season}:${p.episode}`, `${Math.round(p.progress)}%${timeHint}`);
+  }
   if (Array.isArray(meta.videos)) {
-    meta.videos = meta.videos.map(v =>
-      (Number(v.season) === Number(season) && Number(v.episode) === Number(number))
-        ? { ...v, name: `▶ ${v.name || label}` }
-        : v
-    );
+    meta.videos = meta.videos.map(v => {
+      const resumeInfo = resumeByEp.get(`${v.season}:${v.episode}`);
+      if (resumeInfo) return { ...v, name: `▶ ${v.name || `S${v.season}E${v.episode}`} · ${resumeInfo}` };
+      if (Number(v.season) === Number(season) && Number(v.episode) === Number(number)) {
+        return { ...v, name: `▶ ${v.name || label}` };
+      }
+      return v;
+    });
   }
 
   _metaCache.set(cacheKey, meta);

@@ -62,6 +62,35 @@ test('buildMeta series: "Up next" from Trakt progress + marks that episode', asy
   assert.strictEqual(ep.title, undefined, 'must not add a title field (collides with name)');
 });
 
+test('buildMeta series: each in-progress episode carries its own resume hint in the videos list', async () => {
+  _resetCachesForTesting();
+  const base = () => ({
+    ...BASE_SERIES, runtime: 50,
+    videos: [
+      { id: 'a', season: 1, episode: 1, name: 'Pilot' },
+      { id: 'b', season: 2, episode: 5, name: 'Breakage' },
+    ],
+  });
+  const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: async () => ({ completed: 4, aired: 62, next_episode: { season: 2, number: 5, title: 'Breakage' } }),
+    _getPlayback: async () => [
+      { type: 'episode', imdb: 'tt0903747', season: 2, episode: 5, progress: 60, paused_at: '2026-05-30T00:00:00Z' },
+      { type: 'episode', imdb: 'tt0903747', season: 1, episode: 1, progress: 25, paused_at: '2026-05-10T00:00:00Z' },
+    ],
+    _getCinemetaMeta: async () => base(),
+  });
+  const e25 = meta.videos.find(v => v.season === 2 && v.episode === 5);
+  const e11 = meta.videos.find(v => v.season === 1 && v.episode === 1);
+  // The episode you're resuming shows its own % + time right in the list.
+  assert.ok(e25.name.startsWith('▶ ') && e25.name.includes('60%'), e25.name);
+  assert.ok(e25.name.includes('resume ~'), e25.name);
+  // A second in-progress episode is annotated too — not just the chosen one.
+  assert.ok(e11.name.startsWith('▶ ') && e11.name.includes('25%'), e11.name);
+  // Regression guard: still never add a colliding `title` field.
+  assert.strictEqual(e25.title, undefined);
+  assert.strictEqual(e11.title, undefined);
+});
+
 test('buildMeta series: up-next episode partway watched → Resume with %', async () => {
   _resetCachesForTesting();
   const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
