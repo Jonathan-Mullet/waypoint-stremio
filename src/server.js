@@ -208,8 +208,8 @@ const MANIFEST = {
   // is declared under type 'movie' but each returned meta carries its own real
   // type, so Stremio renders one mixed "Continue Watching" / "Watchlist" row.
   catalogs: [
-    { type: 'movie', id: 'waypoint-cw',        name: 'Continue Watching' },
-    { type: 'movie', id: 'waypoint-watchlist', name: 'Watchlist' },
+    { type: 'movie', id: 'waypoint-cw',        name: 'Continue Watching · Waypoint' },
+    { type: 'movie', id: 'waypoint-watchlist', name: 'Watchlist · Waypoint' },
   ],
   resources: ['catalog', 'meta'],
   types: ['movie', 'series'],
