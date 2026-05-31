@@ -5,7 +5,7 @@ const request = require('supertest');
 const { encryptConfig } = require('../src/config.js');
 const { deriveUserKey } = require('../src/config.js');
 
-const KEY = 'd'.repeat(64);
+const KEY = 'a'.repeat(64);
 process.env.CIPHER_KEY = KEY;
 
 const app = require('../src/server.js');

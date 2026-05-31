@@ -40,7 +40,9 @@ test('resolveConfig: invalid base64url chars → throws', async () => {
 
 test('resolveConfig: tampered ciphertext → throws', async () => {
   const enc = encryptConfig(makeConfig());
-  const tampered = enc.slice(0, -1) + (enc.at(-1) === 'A' ? 'B' : 'A');
+  // Tamper a mid-string character (not the last) to avoid base64url padding no-op
+  const mid = Math.floor(enc.length / 2);
+  const tampered = enc.slice(0, mid) + (enc[mid] === 'A' ? 'B' : 'A') + enc.slice(mid + 1);
   await assert.rejects(() => resolveConfig(tampered));
 });
 
