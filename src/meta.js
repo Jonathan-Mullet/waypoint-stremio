@@ -2,7 +2,7 @@ const cinemeta = require('./cinemeta');
 const trakt = require('./providers/trakt');
 const playbackCache = require('./playback-cache');
 const { createCache } = require('./cache');
-const { fmtResumeTime, log } = require('./utils');
+const { fmtResumeTime } = require('./utils');
 
 // Per-user meta cache: user_key:type:imdbId → augmented meta (or null sentinel)
 const _metaCache = createCache({ maxSize: 10000, ttlMs: 60 * 1000 });
@@ -56,14 +56,7 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
   // Up-next is the source of truth for "which episode to jump into".
   let progress, progressOk = true;
   try { progress = await _getProgress(tokens, imdbId); }
-  catch (e) { progress = null; progressOk = false; log('info', 'DBG series progress ERROR', { imdbId, msg: e.message }); }
-
-  // TEMP diagnostic: what did Trakt progress return for this show + token?
-  log('info', 'DBG series progress', {
-    imdbId, ok: progressOk,
-    completed: progress ? progress.completed : null,
-    next: progress && progress.next_episode ? `S${progress.next_episode.season}E${progress.next_episode.number}` : null,
-  });
+  catch { progress = null; progressOk = false; }
 
   // Not started, or fully caught up → nothing to surface; defer to Cinemeta.
   if (!progress || progress.completed === 0 || !progress.next_episode) {
@@ -98,15 +91,18 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
   meta.description = `${resumeLine}\n\n${baseMeta.description || ''}`.trim();
 
   // Mark the up-next episode in the episode list so it's obvious which one to pick.
+  // CRITICAL: modify the existing `name` field — do NOT add `title`. Stremio's
+  // Video struct aliases `title`→`name` (same field); having BOTH triggers a serde
+  // duplicate-field error that fails the entire series meta and makes Stremio fall
+  // back to Cinemeta (hiding the hint). Cinemeta sends episode titles in `name`.
   if (Array.isArray(meta.videos)) {
     meta.videos = meta.videos.map(v =>
       (Number(v.season) === Number(next.season) && Number(v.episode) === Number(next.number))
-        ? { ...v, title: `▶ ${v.title || label}` }
+        ? { ...v, name: `▶ ${v.name || label}` }
         : v
     );
   }
 
-  log('info', 'DBG series HINT produced', { imdbId, line: resumeLine });
   _metaCache.set(cacheKey, meta);
   return meta;
 }

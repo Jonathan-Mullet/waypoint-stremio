@@ -14,9 +14,10 @@ const BASE_SERIES = {
   id: 'tt0903747', name: 'Breaking Bad', type: 'series',
   description: 'A chemistry teacher.',
   runtime: 47,
+  // Cinemeta sends episode titles in `name` (NOT `title`).
   videos: [
-    { id: 'tt0903747:1:1', season: 1, episode: 1, title: 'Pilot' },
-    { id: 'tt0903747:2:5', season: 2, episode: 5, title: 'Breakage' },
+    { id: 'tt0903747:1:1', season: 1, episode: 1, name: 'Pilot' },
+    { id: 'tt0903747:2:5', season: 2, episode: 5, name: 'Breakage' },
   ],
 };
 
@@ -55,7 +56,10 @@ test('buildMeta series: "Up next" from Trakt progress + marks that episode', asy
   assert.ok(meta.description.startsWith('▶ Trakt — Up next: S2E5'));
   assert.ok(meta.description.includes('Breakage'));
   const ep = meta.videos.find(v => v.season === 2 && v.episode === 5);
-  assert.ok(ep.title.startsWith('▶ '), 'up-next episode marked in the list');
+  assert.ok(ep.name.startsWith('▶ '), 'up-next episode marked via name field');
+  // Regression guard: must NOT add a `title` field — Stremio aliases title→name,
+  // and having both triggers a serde duplicate-field error that fails the meta.
+  assert.strictEqual(ep.title, undefined, 'must not add a title field (collides with name)');
 });
 
 test('buildMeta series: up-next episode partway watched → Resume with %', async () => {
