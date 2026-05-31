@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Waypoint — Trakt for Stremio</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <img src="/logo.svg" alt="Waypoint logo">
+    <div><h1>Waypoint</h1><p>Trakt resume hints for Stremio</p></div>
+  </div>
+
+  <div class="steps">
+    <div class="step active" id="ind-1">1. Register</div>
+    <div class="step" id="ind-2">2. Authorize</div>
+    <div class="step" id="ind-3">3. Install</div>
+  </div>
+
+  <!-- Step 1 -->
+  <div id="step-1" class="card">
+    <h2>Connect your Trakt account</h2>
+    <p style="font-size:.85rem;color:var(--text-dim);margin-bottom:1rem;">
+      First, <a class="link" href="https://trakt.tv/oauth/applications/new" target="_blank">
+      create a free Trakt API app ↗</a> with redirect URI
+      <code>urn:ietf:wg:oauth:2.0:oob</code>. Then paste your credentials below.
+    </p>
+    <label for="client-id">Client ID</label>
+    <input type="text" id="client-id" placeholder="e.g. abc123…" autocomplete="off">
+    <label for="client-secret">Client Secret</label>
+    <input type="password" id="client-secret" placeholder="e.g. xyz789…" autocomplete="off">
+    <button onclick="startAuth()">Connect with Trakt →</button>
+    <p class="status err hidden" id="err-1"></p>
+  </div>
+
+  <!-- Step 2 -->
+  <div id="step-2" class="card hidden">
+    <h2>Authorize Waypoint on Trakt</h2>
+    <p style="font-size:.85rem;color:var(--text-dim);margin-bottom:.5rem;">Enter this code at Trakt:</p>
+    <div class="user-code" id="user-code">—</div>
+    <a id="trakt-link" class="link" href="#" target="_blank"
+       style="display:block;text-align:center;margin-bottom:1rem;">Open Trakt to authorize →</a>
+    <p class="status" id="poll-msg"><span class="spinner"></span>Waiting for authorization…</p>
+  </div>
+
+  <!-- Step 3 -->
+  <div id="step-3" class="card hidden">
+    <h2>✓ Connected! Install Waypoint</h2>
+    <button onclick="installStremio()" style="margin-bottom:.5rem;">Install in Stremio →</button>
+    <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:4px;">Or copy the install URL manually:</p>
+    <div class="url-box" id="install-url"></div>
+    <button class="copy-btn" onclick="copy('install-url')">Copy install URL</button>
+    <hr>
+    <p style="font-size:.8rem;color:var(--text-dim);">
+      Reconnect later — saves your Client ID (you will need to re-enter your Client Secret):
+    </p>
+    <div class="url-box" id="reconnect-url"></div>
+    <button class="copy-btn" onclick="copy('reconnect-url')">Copy reconnect link</button>
+    <div class="warning">
+      ⚠️ <strong>Save your install link.</strong> Waypoint does not store your credentials.
+      This link is valid for 90 days from today. Bookmark it or save it somewhere safe.
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = location.origin;
+let _stremioUrl = '';
+let _pollTimer  = null;
+let _interval   = 5;
+
+// Pre-fill from URL param or localStorage
+addEventListener('DOMContentLoaded', () => {
+  const saved = new URLSearchParams(location.search).get('reconnect')
+    || localStorage.getItem('waypoint_client_id') || '';
+  if (saved) document.getElementById('client-id').value = saved;
+});
+
+function setStep(n) {
+  [1,2,3].forEach(i => {
+    document.getElementById(`step-${i}`).classList.toggle('hidden', i !== n);
+    const ind = document.getElementById(`ind-${i}`);
+    ind.classList.toggle('active', i === n);
+    ind.classList.toggle('done', i < n);
+  });
+}
+
+async function startAuth() {
+  const clientId     = document.getElementById('client-id').value.trim();
+  const clientSecret = document.getElementById('client-secret').value.trim();
+  const errEl = document.getElementById('err-1');
+  errEl.classList.add('hidden');
+  if (!clientId || !clientSecret) {
+    errEl.textContent = 'Both fields are required.'; errEl.classList.remove('hidden'); return;
+  }
+  try {
+    const r = await fetch('/api/oauth/start', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Server error');
+    const d = await r.json();
+    localStorage.setItem('waypoint_client_id', clientId);
+    document.getElementById('user-code').textContent = d.user_code;
+    document.getElementById('trakt-link').href = d.verification_url;
+    _interval = d.interval || 5;
+    setStep(2);
+    startPolling(clientId, clientSecret, d.device_code);
+  } catch (e) {
+    errEl.textContent = e.message; errEl.classList.remove('hidden');
+  }
+}
+
+function startPolling(clientId, clientSecret, deviceCode) {
+  const msg = document.getElementById('poll-msg');
+  let tries = 0;
+  _pollTimer = setInterval(async () => {
+    tries++;
+    if (tries > 3) msg.innerHTML = '<span class="spinner"></span>Almost there…';
+    try {
+      const r = await fetch('/api/oauth/poll', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, device_code: deviceCode }),
+      });
+      const d = await r.json();
+      if (d.status === 'authorized') {
+        clearInterval(_pollTimer);
+        const installUrl = `${BASE}/${d.config_token}/manifest.json`;
+        _stremioUrl = `stremio://${location.host}/${d.config_token}/manifest.json`;
+        document.getElementById('install-url').textContent = installUrl;
+        document.getElementById('reconnect-url').textContent =
+          `${BASE}/?reconnect=${encodeURIComponent(clientId)}`;
+        setStep(3);
+      } else if (d.status === 'denied' || d.status === 'expired') {
+        clearInterval(_pollTimer);
+        msg.textContent = `Authorization ${d.status}. Please refresh and try again.`;
+      }
+    } catch {/* keep polling */}
+  }, _interval * 1000);
+}
+
+function installStremio() { window.open(_stremioUrl, '_blank'); }
+
+function copy(id) {
+  navigator.clipboard?.writeText(document.getElementById(id).textContent)
+    .catch(() => {
+      const el = Object.assign(document.createElement('textarea'),
+        { value: document.getElementById(id).textContent });
+      document.body.appendChild(el); el.select();
+      document.execCommand('copy'); document.body.removeChild(el);
+    });
+}
+</script>
+</body>
+</html>
