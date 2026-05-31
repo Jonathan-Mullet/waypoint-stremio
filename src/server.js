@@ -202,6 +202,11 @@ const hostOf = (req) => PUBLIC_URL ? PUBLIC_URL.replace(/^https?:\/\//, '') : re
 const MANIFEST = {
   id: 'io.github.waypoint-stremio',
   version: VERSION,
+  // Ownership/verification signature issued by stremio-addons.net.
+  stremioAddonsConfig: {
+    issuer: 'https://stremio-addons.net',
+    signature: 'eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..e1tRr0gQZa7StOLb9hrAcA.y47Obd4r4keAeyXQStkBMudArKW2AlAKYK_jpjFxWDaD1KQbzs-NyXdiKYh3cOSQwlx7eD8JOqRiD7xBcqEqgPH-tuNqgYDnFk8vNwmZ_Vs4tzK-K1B5YQ9hNSjjVjVC.9xxfZ9azshmL1xjGqYpeyQ',
+  },
   name: 'Waypoint',
   description: 'Resume hints and Continue Watching from Trakt. See exactly where to seek to pick up where you left off — across any Trakt-connected app.',
   // One mixed row: movies + shows interleaved by recency. Declared type 'movie' but
