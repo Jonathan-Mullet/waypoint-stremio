@@ -74,22 +74,72 @@ test('buildMeta series: up-next episode partway watched → Resume with %', asyn
   assert.ok(meta.description.includes('resume ~')); // runtime 47 present
 });
 
-test('buildMeta series: not started (completed 0) → null', async () => {
+test('buildMeta series: not started, nothing in progress (completed 0, no playback) → null', async () => {
   _resetCachesForTesting();
   const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
     _getProgress: async () => ({ completed: 0, aired: 62, next_episode: { season: 1, number: 1, title: 'Pilot' } }),
+    _getPlayback: async () => [],
     _getCinemetaMeta: async () => seriesMeta(),
   });
   assert.strictEqual(meta, null);
 });
 
-test('buildMeta series: caught up (no next_episode) → null', async () => {
+test('buildMeta series: caught up (no next_episode) → null even if a stale partial lingers', async () => {
   _resetCachesForTesting();
   const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
     _getProgress: async () => ({ completed: 62, aired: 62, next_episode: null }),
+    // Trakt sometimes leaves an old paused entry behind; caught-up must still win.
+    _getPlayback: async () => [{ type: 'episode', imdb: 'tt0903747', season: 2, episode: 5, progress: 50, paused_at: '2026-01-01T00:00:00Z' }],
     _getCinemetaMeta: async () => seriesMeta(),
   });
   assert.strictEqual(meta, null);
+});
+
+test('buildMeta series: in-progress episode with completed=0 (Stremio partial scrobble) → Resume hint', async () => {
+  // The real bug: a user mid-episode who never cleanly *finished* one has completed=0
+  // in progress/watched but a live resume point in /sync/playback. The hint must come
+  // from the playback resume point, not bail on completed===0.
+  _resetCachesForTesting();
+  const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: async () => ({ completed: 0, aired: 62, next_episode: { season: 1, number: 1, title: 'Pilot' } }),
+    _getPlayback: async () => [
+      { type: 'episode', imdb: 'tt0903747', season: 2, episode: 5, progress: 79, episode_title: 'Breakage', paused_at: '2026-05-31T03:00:00Z' },
+    ],
+    _getCinemetaMeta: async () => seriesMeta(),
+  });
+  assert.ok(meta, 'must produce a hint from partial playback even with completed=0');
+  assert.ok(meta.description.startsWith('▶ Trakt — Resume S2E5'), meta.description);
+  assert.ok(meta.description.includes('79%'));
+  const ep = meta.videos.find(v => v.season === 2 && v.episode === 5);
+  assert.ok(ep.name.startsWith('▶ '), 'resume episode marked via name field');
+  assert.strictEqual(ep.title, undefined, 'must not add a title field (collides with name)');
+});
+
+test('buildMeta series: most-recent partial wins when several episodes are in progress', async () => {
+  _resetCachesForTesting();
+  const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: async () => ({ completed: 0, aired: 62, next_episode: { season: 1, number: 1, title: 'Pilot' } }),
+    _getPlayback: async () => [
+      { type: 'episode', imdb: 'tt0903747', season: 1, episode: 3, progress: 16, paused_at: '2026-05-23T00:00:00Z' },
+      { type: 'episode', imdb: 'tt0903747', season: 2, episode: 5, progress: 40, episode_title: 'Breakage', paused_at: '2026-05-30T00:00:00Z' },
+    ],
+    _getCinemetaMeta: async () => seriesMeta(),
+  });
+  assert.ok(meta.description.startsWith('▶ Trakt — Resume S2E5'), meta.description);
+});
+
+test('buildMeta series: stale partial behind watched frontier → Up next wins', async () => {
+  // User has cleanly watched past an old paused episode; the up-next target is ahead
+  // of the lingering resume point, so up-next should win (matches the SAO case).
+  _resetCachesForTesting();
+  const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: async () => ({ completed: 3, aired: 25, next_episode: { season: 1, number: 25, title: 'The World Seed' } }),
+    _getPlayback: async () => [
+      { type: 'episode', imdb: 'tt0903747', season: 1, episode: 23, progress: 12, paused_at: '2026-05-30T00:00:00Z' },
+    ],
+    _getCinemetaMeta: async () => seriesMeta(),
+  });
+  assert.ok(meta.description.startsWith('▶ Trakt — Up next: S1E25'), meta.description);
 });
 
 test('buildMeta series: transient progress failure → null, NOT cached', async () => {

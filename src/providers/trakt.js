@@ -67,7 +67,7 @@ async function getPlayback(tokens, { _fetch = fetch } = {}) {
   });
   if (!r.ok) throw new Error(`Trakt playback HTTP ${r.status}`);
   return (await r.json()).map(it => {
-    const base = { progress: typeof it.progress === 'number' ? it.progress : 0 };
+    const base = { progress: typeof it.progress === 'number' ? it.progress : 0, paused_at: it.paused_at };
     if (it.type === 'movie' && it.movie?.ids?.imdb)
       return { ...base, type: 'movie', imdb: it.movie.ids.imdb, title: it.movie.title, year: it.movie.year };
     if (it.type === 'episode' && it.show?.ids?.imdb)
