@@ -51,6 +51,16 @@ test('GET /:config/manifest.json with valid config returns manifest', async () =
   assert.strictEqual(res.headers['access-control-allow-origin'], '*');
 });
 
+test('GET /manifest.json (unconfigured base) is configurationRequired for directories', async () => {
+  const res = await request(app).get('/manifest.json');
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.body.id, 'io.github.waypoint-stremio');
+  // Directories submit this URL; Stremio must route users to /configure first.
+  assert.strictEqual(res.body.behaviorHints.configurationRequired, true);
+  assert.strictEqual(res.body.behaviorHints.configurable, true);
+  assert.strictEqual(res.headers['access-control-allow-origin'], '*');
+});
+
 test('configured manifest is installable (NOT configurationRequired)', async () => {
   const res = await request(app).get(`/${validToken()}/manifest.json`);
   // A token-bearing manifest is already configured — Stremio must show "Install",

@@ -227,6 +227,19 @@ const MANIFEST = {
 // ── Addon routes ──────────────────────────────────────────────────────────────
 app.options('/:config/*', addonCors, (_req, res) => res.sendStatus(204));
 
+// Unconfigured base manifest — this is the URL you submit to addon directories
+// (stremio-addons.net etc.) and what users install fresh. configurationRequired
+// makes Stremio show a "Configure" button that opens /configure (the onboarding
+// page) to mint a token-bearing install URL before the addon can be used.
+app.get('/manifest.json', addonCors, (req, res) => {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json({
+    ...MANIFEST,
+    logo: `${baseUrl(req)}/logo.png`,
+    behaviorHints: { configurable: true, configurationRequired: true },
+  });
+});
+
 app.get('/:config/manifest.json', addonCors, withConfig, (req, res) => {
   if (req.tokenExpired) return res.status(400).json({ error: `token expired — reconnect at ${hostOf(req)}` });
   res.set('Cache-Control', 'public, max-age=300');
