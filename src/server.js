@@ -228,7 +228,7 @@ app.options('/:config/*', addonCors, (_req, res) => res.sendStatus(204));
 app.get('/:config/manifest.json', addonCors, withConfig, (req, res) => {
   if (req.tokenExpired) return res.status(400).json({ error: `token expired — reconnect at ${hostOf(req)}` });
   res.set('Cache-Control', 'public, max-age=300');
-  res.json({ ...MANIFEST, logo: `${baseUrl(req)}/logo.svg` });
+  res.json({ ...MANIFEST, logo: `${baseUrl(req)}/logo.png` });
 });
 
 app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (req, res) => {
@@ -240,7 +240,7 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
     return res.json({ metas: [{
       id: 'waypoint-reconnect', type,
       name: '⚠️ Waypoint: Trakt connection expired',
-      poster: `${baseUrl(req)}/logo.svg`,
+      poster: `${baseUrl(req)}/logo.png`,
       description: `Visit ${hostOf(req)} to reconnect.`,
     }]});
   }
@@ -259,7 +259,7 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
   } catch (e) {
     if (e.code === 'TOKEN_EXPIRED') return res.json({ metas: [{
       id: 'waypoint-reconnect', type,
-      name: '⚠️ Waypoint: Trakt token revoked', poster: `${baseUrl(req)}/logo.svg`,
+      name: '⚠️ Waypoint: Trakt token revoked', poster: `${baseUrl(req)}/logo.png`,
       description: `Visit ${hostOf(req)} to reconnect.`,
     }]});
     log('error', 'catalog error', { catalogId, msg: e.message });

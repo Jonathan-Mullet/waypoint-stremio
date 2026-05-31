@@ -8,73 +8,124 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<div class="topo"></div>
 <div class="container">
+
+  <!-- Header -->
   <div class="header">
-    <img src="/logo.svg" alt="Waypoint logo">
-    <div><h1>Waypoint</h1><p>Trakt resume hints for Stremio</p></div>
+    <svg class="pin" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <defs><linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#ffb732"/><stop offset="1" stop-color="#e5a00d"/>
+      </linearGradient></defs>
+      <rect x="4" y="33" width="40" height="4" rx="2" fill="#2c261e"/>
+      <rect x="4" y="33" width="22" height="4" rx="2" fill="url(#hg)"/>
+      <path d="M26 8c-5 0-9 4-9 9 0 6.5 9 14 9 14s9-7.5 9-14c0-5-4-9-9-9z" fill="url(#hg)"/>
+      <circle class="dot" cx="26" cy="17" r="3.4" fill="#12100c"/>
+    </svg>
+    <div class="wordmark">
+      <h1>Waypoint</h1>
+      <p>Pick up where you left off — Trakt resume hints for Stremio</p>
+    </div>
   </div>
 
-  <div class="steps">
-    <div class="step active" id="ind-1">1. Register</div>
-    <div class="step" id="ind-2">2. Authorize</div>
-    <div class="step" id="ind-3">3. Install</div>
+  <!-- Route stepper -->
+  <div class="route" aria-hidden="true">
+    <div class="route__fill" id="route-fill"></div>
+    <div class="station active" id="st-1"><div class="station__pin">1</div><div class="station__label">Register</div></div>
+    <div class="station" id="st-2"><div class="station__pin">2</div><div class="station__label">Authorize</div></div>
+    <div class="station" id="st-3"><div class="station__pin">3</div><div class="station__label">Install</div></div>
   </div>
 
-  <!-- Step 1 -->
+  <!-- ── STEP 1 — Register ─────────────────────────────────────────────── -->
   <div id="step-1" class="card">
+    <div class="eyebrow">Step 01 — Register</div>
     <h2>Connect your Trakt account</h2>
-    <p style="font-size:.85rem;color:var(--text-dim);margin-bottom:1rem;">
-      First, <a class="link" href="https://trakt.tv/oauth/applications/new" target="_blank">
-      create a free Trakt API app ↗</a> with redirect URI
-      <code>urn:ietf:wg:oauth:2.0:oob</code>. Then paste your credentials below.
+    <p class="lede">Waypoint reads your Trakt history through your own free Trakt app — nothing is stored on our servers.</p>
+
+    <ol class="steps-list">
+      <li><span class="num">1</span><span><a class="link" href="https://trakt.tv/oauth/applications/new" target="_blank" rel="noopener">Create a new Trakt API app ↗</a></span></li>
+      <li><span class="num">2</span><span>Give it any <strong>Name</strong>, and set the <span class="t">Redirect URI</span> to:
+        <div class="copy-field" style="margin-top:6px">
+          <span class="val" id="redirect-uri">urn:ietf:wg:oauth:2.0:oob</span>
+          <button onclick="copyField(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy</span></button>
+        </div></span></li>
+      <li><span class="num">3</span><span>Save the app, then copy your <strong>Client ID</strong> and <strong>Client Secret</strong> into the fields below.</span></li>
+    </ol>
+
+    <p class="center" style="margin:-.3rem 0 1.1rem">
+      <a class="link link-row" href="https://trakt.tv/oauth/applications" target="_blank" rel="noopener">
+        Already have a Trakt app? Get your credentials →
+      </a>
     </p>
-    <label for="client-id">Client ID</label>
-    <input type="text" id="client-id" placeholder="e.g. abc123…" autocomplete="off">
-    <label for="client-secret">Client Secret</label>
-    <input type="password" id="client-secret" placeholder="e.g. xyz789…" autocomplete="off">
-    <button onclick="startAuth()">Connect with Trakt →</button>
-    <p class="status err hidden" id="err-1"></p>
+
+    <div class="field">
+      <label for="client-id">Client ID</label>
+      <input type="text" id="client-id" placeholder="paste your Client ID" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="client-secret">Client Secret</label>
+      <input type="password" id="client-secret" placeholder="paste your Client Secret" autocomplete="off" spellcheck="false">
+    </div>
+    <button class="btn btn-primary" onclick="startAuth()">Connect with Trakt →</button>
+    <p class="err hidden" id="err-1"></p>
   </div>
 
-  <!-- Step 2 -->
+  <!-- ── STEP 2 — Authorize ────────────────────────────────────────────── -->
   <div id="step-2" class="card hidden">
-    <h2>Authorize Waypoint on Trakt</h2>
-    <p style="font-size:.85rem;color:var(--text-dim);margin-bottom:.5rem;">Enter this code at Trakt:</p>
-    <div class="user-code" id="user-code">—</div>
-    <a id="trakt-link" class="link" href="#" target="_blank"
-       style="display:block;text-align:center;margin-bottom:1rem;">Open Trakt to authorize →</a>
-    <p class="status" id="poll-msg"><span class="spinner"></span>Waiting for authorization…</p>
+    <div class="eyebrow">Step 02 — Authorize</div>
+    <h2>Approve Waypoint on Trakt</h2>
+    <p class="lede">Open Trakt and enter the code below to grant read access to your watch history.</p>
+
+    <div class="usercode" id="user-code" onclick="copyCode(this)" title="Tap to copy">
+      <span id="user-code-val">— — — —</span>
+      <span class="hint" id="user-code-hint">Tap to copy</span>
+    </div>
+
+    <a id="trakt-link" class="btn btn-primary mt" href="#" target="_blank" rel="noopener">Open Trakt to authorize →</a>
+
+    <p class="poll" id="poll-msg"><span class="spinner"></span> Waiting for you to authorize…</p>
   </div>
 
-  <!-- Step 3 -->
+  <!-- ── STEP 3 — Install ──────────────────────────────────────────────── -->
   <div id="step-3" class="card hidden">
-    <h2>✓ Connected! Install Waypoint</h2>
-    <button onclick="installStremio()" style="margin-bottom:.5rem;">Install in Stremio →</button>
-    <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:4px;">Or copy the install URL manually:</p>
-    <div class="url-box" id="install-url"></div>
-    <button class="copy-btn" onclick="copy('install-url')">Copy install URL</button>
+    <div class="eyebrow">Step 03 — Install</div>
+    <h2>You're connected 🎉</h2>
+    <p class="lede">Add Waypoint to Stremio, then do the one quick ordering step below so your resume hints show up.</p>
 
-    <div class="warning" style="border-color:#4caf7d;background:#0f2a1c;">
-      ⭐ <strong>One required step for resume hints:</strong> move Waypoint
-      <strong>above Cinemeta</strong> in your addon order, otherwise Stremio shows Cinemeta's
-      details and Waypoint's resume hint never appears. Use the
-      <a class="link" href="https://stremio-addon-manager.vercel.app" target="_blank">Stremio Addon Manager ↗</a>:
-      sign in, drag <strong>Waypoint</strong> near the top (above Cinemeta), then click
-      <strong>Sync to Stremio</strong>. Reordering also refreshes Stremio's cache, so do this
-      again any time the hint stops updating.
+    <button class="btn btn-primary" onclick="installStremio()">Install in Stremio →</button>
+
+    <p class="sub" style="margin:1rem 0 0">Or copy the install URL and add it manually in Stremio → Addons → paste at the top:</p>
+    <div class="copy-field">
+      <span class="val" id="install-url"></span>
+      <button onclick="copyField(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy</span></button>
     </div>
 
-    <hr>
-    <p style="font-size:.8rem;color:var(--text-dim);">
-      Reconnect later — saves your Client ID (you will need to re-enter your Client Secret):
-    </p>
-    <div class="url-box" id="reconnect-url"></div>
-    <button class="copy-btn" onclick="copy('reconnect-url')">Copy reconnect link</button>
-    <div class="warning">
-      ⚠️ <strong>Save your install link.</strong> Waypoint does not store your credentials.
-      This link is valid for 90 days from today. Bookmark it or save it somewhere safe.
+    <div class="callout">
+      <div class="ctitle">⭐ Required — move Waypoint above Cinemeta</div>
+      <p class="sub" style="color:var(--text-dim)">Stremio shows the details from whichever addon is highest in your list. To make Waypoint's resume hint appear, it has to sit above Cinemeta:</p>
+      <ol>
+        <li>Open the <a class="link" href="https://stremio-addon-manager.vercel.app" target="_blank" rel="noopener">Stremio Addon Manager ↗</a> and sign in.</li>
+        <li>Drag <strong>Waypoint</strong> near the top of the list — <strong>above Cinemeta</strong>.</li>
+        <li>Click <strong>Sync to Stremio</strong>.</li>
+      </ol>
+      <p class="sub" style="margin-top:.5rem;color:var(--text-faint)">Tip: re-syncing here also refreshes Stremio's cache if a hint ever looks stale.</p>
+    </div>
+
+    <div class="divider"></div>
+
+    <p class="sub">Reconnect later (saves your Client ID — you'll re-enter the Secret):</p>
+    <div class="copy-field">
+      <span class="val" id="reconnect-url"></span>
+      <button onclick="copyField(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy</span></button>
+    </div>
+
+    <div class="callout warn" style="margin-top:1rem">
+      <div class="ctitle">⚠️ Save your install link</div>
+      <p class="sub" style="color:var(--text-dim)">Waypoint doesn't store your credentials — this link is the only copy. Bookmark it or keep it somewhere safe.</p>
     </div>
   </div>
+
+  <p class="foot">Waypoint · open source · no tracking · <a href="https://github.com/Jonathan-Mullet/waypoint-stremio" target="_blank" rel="noopener">source</a></p>
 </div>
 
 <script>
@@ -83,7 +134,6 @@ let _stremioUrl = '';
 let _pollTimer  = null;
 let _interval   = 5;
 
-// Pre-fill from URL param or localStorage
 addEventListener('DOMContentLoaded', () => {
   const saved = new URLSearchParams(location.search).get('reconnect')
     || localStorage.getItem('waypoint_client_id') || '';
@@ -93,20 +143,54 @@ addEventListener('DOMContentLoaded', () => {
 function setStep(n) {
   [1,2,3].forEach(i => {
     document.getElementById(`step-${i}`).classList.toggle('hidden', i !== n);
-    const ind = document.getElementById(`ind-${i}`);
-    ind.classList.toggle('active', i === n);
-    ind.classList.toggle('done', i < n);
+    const st = document.getElementById(`st-${i}`);
+    st.classList.toggle('active', i === n);
+    st.classList.toggle('done', i < n);
+    const pinEl = st.querySelector('.station__pin');
+    pinEl.textContent = i < n ? '✓' : i;
+  });
+  document.getElementById('route-fill').style.width = `${((n - 1) / 2) * 100}%`;
+}
+
+/* ── Copy helpers ──────────────────────────────────────────────────────── */
+function writeClipboard(text) {
+  if (navigator.clipboard) return navigator.clipboard.writeText(text);
+  return new Promise((res) => {
+    const el = Object.assign(document.createElement('textarea'), { value: text });
+    el.style.position = 'fixed'; el.style.opacity = '0';
+    document.body.appendChild(el); el.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(el); res();
+  });
+}
+function copyField(btn) {
+  const text = btn.parentElement.querySelector('.val').textContent.trim();
+  writeClipboard(text).then(() => {
+    const span = btn.querySelector('span'); const prev = span.textContent;
+    btn.classList.add('copied', 'pop'); span.textContent = 'Copied';
+    setTimeout(() => { btn.classList.remove('copied', 'pop'); span.textContent = prev; }, 1600);
+  });
+}
+function copyCode(el) {
+  const text = document.getElementById('user-code-val').textContent.trim();
+  writeClipboard(text).then(() => {
+    const hint = document.getElementById('user-code-hint'); const prev = hint.textContent;
+    el.classList.add('copied', 'pop'); hint.textContent = 'Copied ✓';
+    setTimeout(() => { el.classList.remove('copied', 'pop'); hint.textContent = prev; }, 1600);
   });
 }
 
+/* ── Auth flow ─────────────────────────────────────────────────────────── */
 async function startAuth() {
   const clientId     = document.getElementById('client-id').value.trim();
   const clientSecret = document.getElementById('client-secret').value.trim();
   const errEl = document.getElementById('err-1');
   errEl.classList.add('hidden');
   if (!clientId || !clientSecret) {
-    errEl.textContent = 'Both fields are required.'; errEl.classList.remove('hidden'); return;
+    errEl.textContent = 'Both Client ID and Client Secret are required.';
+    errEl.classList.remove('hidden'); return;
   }
+  const btn = event.target; btn.disabled = true;
   try {
     const r = await fetch('/api/oauth/start', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -115,13 +199,14 @@ async function startAuth() {
     if (!r.ok) throw new Error((await r.json()).error || 'Server error');
     const d = await r.json();
     localStorage.setItem('waypoint_client_id', clientId);
-    document.getElementById('user-code').textContent = d.user_code;
+    document.getElementById('user-code-val').textContent = d.user_code;
     document.getElementById('trakt-link').href = d.verification_url;
     _interval = d.interval || 5;
     setStep(2);
     startPolling(clientId, clientSecret, d.device_code);
   } catch (e) {
     errEl.textContent = e.message; errEl.classList.remove('hidden');
+    btn.disabled = false;
   }
 }
 
@@ -130,7 +215,7 @@ function startPolling(clientId, clientSecret, deviceCode) {
   let tries = 0;
   _pollTimer = setInterval(async () => {
     tries++;
-    if (tries > 3) msg.innerHTML = '<span class="spinner"></span>Almost there…';
+    if (tries > 3) msg.innerHTML = '<span class="spinner"></span> Almost there…';
     try {
       const r = await fetch('/api/oauth/poll', {
         method: 'POST', headers: {'Content-Type':'application/json'},
@@ -147,23 +232,13 @@ function startPolling(clientId, clientSecret, deviceCode) {
         setStep(3);
       } else if (d.status === 'denied' || d.status === 'expired') {
         clearInterval(_pollTimer);
-        msg.textContent = `Authorization ${d.status}. Please refresh and try again.`;
+        msg.innerHTML = `Authorization ${d.status}. Please refresh and try again.`;
       }
     } catch {/* keep polling */}
   }, _interval * 1000);
 }
 
 function installStremio() { window.open(_stremioUrl, '_blank'); }
-
-function copy(id) {
-  navigator.clipboard?.writeText(document.getElementById(id).textContent)
-    .catch(() => {
-      const el = Object.assign(document.createElement('textarea'),
-        { value: document.getElementById(id).textContent });
-      document.body.appendChild(el); el.select();
-      document.execCommand('copy'); document.body.removeChild(el);
-    });
-}
 </script>
 </body>
 </html>
