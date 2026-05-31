@@ -46,6 +46,26 @@ test('GET /:config/manifest.json with valid config returns manifest', async () =
   assert.strictEqual(res.headers['access-control-allow-origin'], '*');
 });
 
+test('configured manifest is installable (NOT configurationRequired)', async () => {
+  const res = await request(app).get(`/${validToken()}/manifest.json`);
+  // A token-bearing manifest is already configured — Stremio must show "Install",
+  // which means configurationRequired must be absent/false.
+  assert.notStrictEqual(res.body.behaviorHints?.configurationRequired, true);
+});
+
+test('GET /:config/configure serves the onboarding page (Configure gear works)', async () => {
+  const res = await request(app).get(`/${validToken()}/configure`);
+  assert.strictEqual(res.status, 200);
+  assert.ok(res.headers['content-type'].includes('text/html'));
+  assert.ok(res.text.includes('Waypoint'));
+});
+
+test('GET /configure serves the onboarding page', async () => {
+  const res = await request(app).get('/configure');
+  assert.strictEqual(res.status, 200);
+  assert.ok(res.text.includes('Waypoint'));
+});
+
 test('GET /:config/manifest.json with invalid chars returns 400', async () => {
   const res = await request(app).get('/invalid!!config/manifest.json');
   assert.strictEqual(res.status, 400);

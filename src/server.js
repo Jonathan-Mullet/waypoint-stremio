@@ -126,6 +126,13 @@ app.get('/health', (_req, res) => {
 // ── Static (onboarding page) ──────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// Stremio's "Configure" button opens <base>/configure or <base>/<config>/configure.
+// Serve the onboarding page at both so the gear works (and so a base manifest, if
+// ever added, can route users to setup) instead of 404ing.
+const _onboardingPage = path.join(__dirname, '..', 'public', 'index.html');
+app.get('/configure', (_req, res) => res.sendFile(_onboardingPage));
+app.get('/:config/configure', (_req, res) => res.sendFile(_onboardingPage));
+
 // ── OAuth API (no CORS — same-origin from config page) ───────────────────────
 app.post('/api/oauth/start', oauthLimiter, async (req, res) => {
   const { client_id, client_secret } = req.body || {};
@@ -209,7 +216,12 @@ const MANIFEST = {
   resources: ['catalog', 'meta'],
   types: ['movie', 'series'],
   idPrefixes: ['tt'],
-  behaviorHints: { configurable: true, configurationRequired: true },
+  // configurable: shows a "Configure" gear that opens <base>/<config>/configure
+  // (served below). NOT configurationRequired — by the time Stremio fetches a
+  // token-bearing manifest URL the addon is already configured, so it must
+  // present as installable; configurationRequired:true makes Stremio refuse to
+  // install and 404 on /configure instead.
+  behaviorHints: { configurable: true },
 };
 
 // ── Addon routes ──────────────────────────────────────────────────────────────
