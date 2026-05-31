@@ -84,15 +84,28 @@ test('buildMeta series: not started, nothing in progress (completed 0, no playba
   assert.strictEqual(meta, null);
 });
 
-test('buildMeta series: caught up (no next_episode) → null even if a stale partial lingers', async () => {
+test('buildMeta series: fully watched / caught up → "Caught up" hint (Off Campus case)', async () => {
+  _resetCachesForTesting();
+  const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: async () => ({ completed: 8, aired: 8, next_episode: null }),
+    _getPlayback: async () => [],
+    _getCinemetaMeta: async () => seriesMeta(),
+  });
+  assert.ok(meta, 'finished shows must still get a hint, not null');
+  assert.ok(meta.description.startsWith('✓ Trakt — Caught up'), meta.description);
+  assert.ok(meta.description.includes('8'));
+});
+
+test('buildMeta series: caught up wins over a stale lingering partial', async () => {
   _resetCachesForTesting();
   const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
     _getProgress: async () => ({ completed: 62, aired: 62, next_episode: null }),
-    // Trakt sometimes leaves an old paused entry behind; caught-up must still win.
+    // Trakt sometimes leaves an old paused entry behind; caught-up still shows the marker.
     _getPlayback: async () => [{ type: 'episode', imdb: 'tt0903747', season: 2, episode: 5, progress: 50, paused_at: '2026-01-01T00:00:00Z' }],
     _getCinemetaMeta: async () => seriesMeta(),
   });
-  assert.strictEqual(meta, null);
+  assert.ok(meta.description.startsWith('✓ Trakt — Caught up'), meta.description);
+  assert.ok(meta.description.includes('62'));
 });
 
 test('buildMeta series: in-progress episode with completed=0 (Stremio partial scrobble) → Resume hint', async () => {

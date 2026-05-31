@@ -72,11 +72,17 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
   // Both sources down → don't cache a negative; let the next request retry.
   if (!progressOk && !playbackOk) return null;
 
-  // Fully caught up (every aired episode watched, nothing up next) → defer to Cinemeta,
-  // ignoring any stale resume point Trakt may have left behind.
+  // Fully caught up (every aired episode watched, nothing up next) → show a "watched /
+  // caught up" marker so finished shows still get a hint, ignoring any stale resume
+  // point Trakt may have left behind.
   if (progress && progress.completed > 0 && !progress.next_episode) {
-    _metaCache.set(cacheKey, NULL_SENTINEL);
-    return null;
+    const baseMeta = await _getCinemetaMeta('series', imdbId);
+    if (!baseMeta) return null;
+    const n = progress.aired || progress.completed;
+    const meta = { ...baseMeta };
+    meta.description = `✓ Trakt — Caught up · all ${n} episode${n === 1 ? '' : 's'} watched\n\n${baseMeta.description || ''}`.trim();
+    _metaCache.set(cacheKey, meta);
+    return meta;
   }
 
   // Resume point: the most-recently-paused in-progress episode for this show.
