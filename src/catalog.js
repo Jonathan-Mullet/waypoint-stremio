@@ -7,9 +7,7 @@ const { fmtResumeTime } = require('./utils');
 const _cwCache = createCache({ maxSize: 1000, ttlMs: 30 * 1000 });
 const _wlCache = createCache({ maxSize: 1000, ttlMs: 5 * 60 * 1000 });
 
-function _episodeScore(it) {
-  return (Number(it.season) || 0) * 10000 + (Number(it.episode) || 0);
-}
+function _pausedMs(it) { return it.paused_at ? (Date.parse(it.paused_at) || 0) : 0; }
 
 function _toMeta(it, type) {
   return {
@@ -21,9 +19,11 @@ function _toMeta(it, type) {
   };
 }
 
+// Continue Watching as ONE recency-interleaved row: movies and shows mixed,
+// most-recently-paused first (mirrors Stremio's own Continue Watching ordering).
 // opts allows test injection: { _getPlayback, _getRuntimeMinutes }
-async function buildContinueWatching(tokens, wantMovies, opts = {}) {
-  const cacheKey = `${tokens.user_key}:cw:${wantMovies ? 'm' : 's'}`;
+async function buildContinueWatchingMixed(tokens, opts = {}) {
+  const cacheKey = `${tokens.user_key}:cw:mixed`;
   const cached = _cwCache.get(cacheKey);
   if (cached) return cached;
 
@@ -37,34 +37,24 @@ async function buildContinueWatching(tokens, wantMovies, opts = {}) {
     return [];
   }
 
-  const type = wantMovies ? 'movie' : 'series';
-
-  let candidates;
-  if (wantMovies) {
-    // De-duplicate movies by imdb, keep highest progress
-    const byImdb = new Map();
-    for (const it of items) {
-      if (it.type !== 'movie' || !it.imdb) continue;
-      const prev = byImdb.get(it.imdb);
-      if (!prev || it.progress > prev.progress) byImdb.set(it.imdb, it);
-    }
-    candidates = [...byImdb.values()];
-  } else {
-    // De-duplicate shows to deepest episode per show
-    const byShow = new Map();
-    for (const it of items) {
-      if (it.type !== 'episode' || !it.imdb) continue;
-      const prev = byShow.get(it.imdb);
-      if (!prev || _episodeScore(it) > _episodeScore(prev)) byShow.set(it.imdb, it);
-    }
-    candidates = [...byShow.values()];
+  // One entry per title, keeping the most-recently-paused occurrence (movies keyed by
+  // imdb, shows by show imdb so the row shows the episode you last touched).
+  const byKey = new Map();
+  for (const it of items) {
+    if (!it.imdb || (it.type !== 'movie' && it.type !== 'episode')) continue;
+    const key = `${it.type === 'movie' ? 'm' : 's'}:${it.imdb}`;
+    const prev = byKey.get(key);
+    if (!prev || _pausedMs(it) > _pausedMs(prev)) byKey.set(key, it);
   }
+  // Newest-first across both types — this is the interleaving the user wants.
+  const candidates = [...byKey.values()].sort((a, b) => _pausedMs(b) - _pausedMs(a));
 
   const runtimes = await Promise.allSettled(
-    candidates.map(it => _getRuntimeMinutes(type, it.imdb).catch(() => null))
+    candidates.map(it => _getRuntimeMinutes(it.type === 'movie' ? 'movie' : 'series', it.imdb).catch(() => null))
   );
 
   const metas = candidates.map((it, i) => {
+    const type = it.type === 'movie' ? 'movie' : 'series';
     const minutes = runtimes[i].status === 'fulfilled' ? runtimes[i].value : null;
     const resumeSecs = minutes ? (it.progress / 100) * minutes * 60 : null;
     const resumeHint = resumeSecs != null ? `▶ Resume ~${fmtResumeTime(resumeSecs)}` : null;
@@ -82,28 +72,35 @@ async function buildContinueWatching(tokens, wantMovies, opts = {}) {
   return metas;
 }
 
+// Watchlist as ONE row: movie + show watchlist items combined. Trakt's watchlist
+// carries no progress/recency here, so movies precede shows.
 // opts allows test injection: { _getWatchlist }
-async function buildWatchlist(tokens, wantMovies, opts = {}) {
-  const kind = wantMovies ? 'movies' : 'shows';
-  const cacheKey = `${tokens.user_key}:wl:${kind}`;
+async function buildWatchlistMixed(tokens, opts = {}) {
+  const cacheKey = `${tokens.user_key}:wl:mixed`;
   const cached = _wlCache.get(cacheKey);
   if (cached) return cached;
 
   const _getWatchlist = opts._getWatchlist || ((t, k) => trakt.getWatchlist(t, k));
-  const type = wantMovies ? 'movie' : 'series';
 
-  let items;
-  try { items = await _getWatchlist(tokens, kind); }
-  catch (e) {
+  let movies, shows;
+  try {
+    [movies, shows] = await Promise.all([
+      _getWatchlist(tokens, 'movies'),
+      _getWatchlist(tokens, 'shows'),
+    ]);
+  } catch (e) {
     if (String(e.message).includes('401')) throw Object.assign(e, { code: 'TOKEN_EXPIRED' });
     return [];
   }
 
-  const metas = items.map(it => _toMeta(it, type));
+  const metas = [
+    ...movies.map(it => _toMeta(it, 'movie')),
+    ...shows.map(it => _toMeta(it, 'series')),
+  ];
   _wlCache.set(cacheKey, metas);
   return metas;
 }
 
 function _resetCachesForTesting() { _cwCache.reset(); _wlCache.reset(); }
 
-module.exports = { buildContinueWatching, buildWatchlist, _episodeScore, _resetCachesForTesting };
+module.exports = { buildContinueWatchingMixed, buildWatchlistMixed, _resetCachesForTesting };

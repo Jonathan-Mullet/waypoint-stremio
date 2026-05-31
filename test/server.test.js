@@ -92,14 +92,14 @@ test('GET /:config/catalog with invalid catalogId returns 400', async () => {
   assert.strictEqual(res.status, 400);
 });
 
-test('manifest declares per-type catalogs incl. series (needed for series meta)', async () => {
+test('manifest declares 2 mixed catalogs and supports series meta via types', async () => {
   const res = await request(app).get(`/${validToken()}/manifest.json`);
-  const cats = res.body.catalogs;
-  // A series-typed catalog must exist or Stremio won't use Waypoint's series meta.
-  assert.ok(cats.some(c => c.type === 'series'), 'must declare at least one series catalog');
-  assert.ok(cats.some(c => c.type === 'movie'),  'must declare at least one movie catalog');
-  const ids = cats.map(c => c.id).sort();
-  assert.deepStrictEqual(ids, ['waypoint-cw-movies', 'waypoint-cw-series', 'waypoint-watchlist-movies', 'waypoint-watchlist-series']);
+  const ids = res.body.catalogs.map(c => c.id).sort();
+  assert.deepStrictEqual(ids, ['waypoint-cw', 'waypoint-watchlist']);
+  // Series meta is gated on the `types` array (NOT on declaring a series catalog) —
+  // confirmed in stremio-core's is_resource_supported. So series must be in types.
+  assert.ok(res.body.types.includes('series'), 'must declare series in types for series meta');
+  assert.ok(res.body.types.includes('movie'));
 });
 
 test('GET /:config/meta with invalid imdb id returns 400', async () => {

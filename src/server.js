@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { resolveConfig, encryptConfig } = require('./config');
 const { startDeviceCode, pollDeviceToken } = require('./providers/trakt');
-const { buildContinueWatching, buildWatchlist } = require('./catalog');
+const { buildContinueWatchingMixed, buildWatchlistMixed } = require('./catalog');
 const { buildMeta } = require('./meta');
 const { log } = require('./utils');
 
@@ -23,10 +23,7 @@ app.use(express.json({ limit: '4kb' }));
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const VALID_TYPES    = new Set(['movie', 'series']);
-const VALID_CATALOGS = new Set([
-  'waypoint-cw-movies', 'waypoint-cw-series',
-  'waypoint-watchlist-movies', 'waypoint-watchlist-series',
-]);
+const VALID_CATALOGS = new Set(['waypoint-cw', 'waypoint-watchlist']);
 const IMDB_RE = /^tt\d{6,8}$/;
 
 // ── Rate limiting (keyed by sha256 of raw encoded blob — before decryption) ──
@@ -207,16 +204,14 @@ const MANIFEST = {
   version: VERSION,
   name: 'Waypoint',
   description: 'Resume hints and Continue Watching from Trakt. See exactly where to seek to pick up where you left off — across any Trakt-connected app.',
-  // One catalog PER TYPE. Stremio only uses an addon's meta for a type when the
-  // addon declares a catalog of that type — so the series catalogs below are what
-  // make the series resume/up-next hint display (a single mixed-type catalog drops
-  // series back to Cinemeta's detail page, hiding the hint). Distinct names avoid
-  // the duplicate-row confusion.
+  // Two mixed rows: movies + shows interleaved by recency. Each row is declared
+  // type 'movie' but returns metas of BOTH types (each meta carries its own `type`,
+  // which is what Stremio routes clicks on). Series meta still works because the
+  // meta resource keys off the `types` array below, NOT off declaring a series
+  // catalog — verified in stremio-core's is_resource_supported.
   catalogs: [
-    { type: 'movie',  id: 'waypoint-cw-movies',        name: 'Continue Watching · Waypoint' },
-    { type: 'series', id: 'waypoint-cw-series',        name: 'Up Next · Waypoint' },
-    { type: 'movie',  id: 'waypoint-watchlist-movies', name: 'Movie Watchlist · Waypoint' },
-    { type: 'series', id: 'waypoint-watchlist-series', name: 'Show Watchlist · Waypoint' },
+    { type: 'movie', id: 'waypoint-cw',        name: 'Continue Watching · Waypoint' },
+    { type: 'movie', id: 'waypoint-watchlist', name: 'Watchlist · Waypoint' },
   ],
   resources: ['catalog', 'meta'],
   types: ['movie', 'series'],
@@ -254,10 +249,9 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
 
   try {
     const cfg = req.traktConfig;
-    const wantMovies = type === 'movie';
-    const metas = catalogId.includes('cw')
-      ? await buildContinueWatching(cfg, wantMovies)
-      : await buildWatchlist(cfg, wantMovies);
+    const metas = catalogId === 'waypoint-cw'
+      ? await buildContinueWatchingMixed(cfg)
+      : await buildWatchlistMixed(cfg);
 
     res.set('Cache-Control', 'public, max-age=30');
     res.json({ metas });
