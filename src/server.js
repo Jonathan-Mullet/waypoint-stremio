@@ -123,6 +123,9 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, uptime_s: Math.floor((Date.now() - START_TIME) / 1000), version: VERSION });
 });
 
+// TEMP debug — dump request headers to discover which carries the public host
+app.get('/_debug_headers', (req, res) => { res.json(req.headers); });
+
 // ── Static (onboarding page) ──────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
