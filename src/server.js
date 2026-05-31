@@ -5,6 +5,7 @@ const { resolveConfig, encryptConfig } = require('./config');
 const { startDeviceCode, pollDeviceToken } = require('./providers/trakt');
 const { buildContinueWatching, buildWatchlist } = require('./catalog');
 const { buildMeta } = require('./meta');
+const { buildResumeStream } = require('./stream');
 const { log } = require('./utils');
 
 // ── Startup validation ────────────────────────────────────────────────────────
@@ -213,7 +214,7 @@ const MANIFEST = {
     { type: 'movie',  id: 'waypoint-watchlist-movies', name: 'Watchlist' },
     { type: 'series', id: 'waypoint-watchlist-series', name: 'Watchlist' },
   ],
-  resources: ['catalog', 'meta'],
+  resources: ['catalog', 'meta', 'stream'],
   types: ['movie', 'series'],
   idPrefixes: ['tt'],
   // configurable: shows a "Configure" gear that opens <base>/<config>/configure
@@ -275,10 +276,33 @@ app.get('/:config/meta/:type/:id.json', addonCors, withConfig, async (req, res) 
 
   try {
     const meta = await buildMeta(req.traktConfig, type, id);
+    // TEMP diagnostic: did we inject a resume hint for this title?
+    log('info', 'meta-result', { id, type, hint: meta && /▶ Trakt/.test(meta.description || '') ? 'HINT' : (meta ? 'meta-no-hint' : 'null') });
     res.set('Cache-Control', `public, max-age=${meta ? 60 : 300}`);
     res.json({ meta: meta || null });
-  } catch {
+  } catch (e) {
+    log('error', 'meta failed', { id, msg: e.message });
     res.json({ meta: null });
+  }
+});
+
+// stream/:type/:id.json — surface a visible "▶ Resume at ~X" entry at the top of
+// the stream list for in-progress titles. id is "tt123" (movie) or "tt123:S:E".
+const STREAM_ID_RE = /^tt\d{6,8}(?::\d{1,4}:\d{1,4})?$/;
+app.get('/:config/stream/:type/:id.json', addonCors, withConfig, async (req, res) => {
+  const { type, id } = req.params;
+  if (!VALID_TYPES.has(type)) return res.status(400).json({ error: 'invalid type' });
+  if (!STREAM_ID_RE.test(id)) return res.status(400).json({ error: 'invalid id' });
+  if (req.tokenExpired)       return res.json({ streams: [] });
+
+  try {
+    const result = await buildResumeStream(req.traktConfig, type, id);
+    log('info', 'stream-result', { id, type, streams: result.streams.length });
+    res.set('Cache-Control', 'public, max-age=30');
+    res.json(result);
+  } catch (e) {
+    log('error', 'stream failed', { id, msg: e.message });
+    res.json({ streams: [] });
   }
 });
 
