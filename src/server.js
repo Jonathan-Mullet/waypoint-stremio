@@ -276,8 +276,6 @@ app.get('/:config/meta/:type/:id.json', addonCors, withConfig, async (req, res) 
 
   try {
     const meta = await buildMeta(req.traktConfig, type, id);
-    // TEMP diagnostic: did we inject a resume hint for this title?
-    log('info', 'meta-result', { id, type, hint: meta && /▶ Trakt/.test(meta.description || '') ? 'HINT' : (meta ? 'meta-no-hint' : 'null') });
     res.set('Cache-Control', `public, max-age=${meta ? 60 : 300}`);
     res.json({ meta: meta || null });
   } catch (e) {
@@ -297,7 +295,6 @@ app.get('/:config/stream/:type/:id.json', addonCors, withConfig, async (req, res
 
   try {
     const result = await buildResumeStream(req.traktConfig, type, id);
-    log('info', 'stream-result', { id, type, streams: result.streams.length });
     res.set('Cache-Control', 'public, max-age=30');
     res.json(result);
   } catch (e) {
