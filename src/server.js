@@ -123,9 +123,6 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, uptime_s: Math.floor((Date.now() - START_TIME) / 1000), version: VERSION });
 });
 
-// TEMP debug — dump request headers to discover which carries the public host
-app.get('/_debug_headers', (req, res) => { res.json(req.headers); });
-
 // ── Static (onboarding page) ──────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
@@ -186,14 +183,16 @@ async function withConfig(req, res, next) {
   }
 }
 
-// Derive the addon's own public host from the incoming request, so logo, poster,
-// and reconnect-text URLs are always correct regardless of the deployed domain
-// (Beamup assigns a hash-prefixed subdomain; self-hosters use their own).
-// Behind Beamup's proxy the Host header is rewritten to the internal Dokku app
-// name, so prefer X-Forwarded-Host (the real public host) and fall back to Host.
-// Stremio requires addons to be served over https, so the protocol is fixed.
-const hostOf = (req) => req.get('x-forwarded-host') || req.get('host');
-const baseUrl = (req) => `https://${hostOf(req)}`;
+// The addon's own public base URL, used for logo / poster / reconnect-text URLs.
+// Behind Beamup's proxy (Cloudflare → Beamup → Dokku) the Host header is rewritten
+// to the internal Dokku app name and no X-Forwarded-Host is sent, so the public
+// domain is NOT recoverable from request headers. PUBLIC_URL makes it explicit;
+// set it as an env var to the deployed origin (e.g. https://<app>.baby-beamup.club).
+// Falls back to the request host for local dev / self-hosting where Host is correct.
+// Stremio requires addons to be served over https, so https is assumed in fallback.
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
+const baseUrl = (req) => PUBLIC_URL || `https://${req.get('host')}`;
+const hostOf = (req) => PUBLIC_URL ? PUBLIC_URL.replace(/^https?:\/\//, '') : req.get('host');
 
 // ── Manifest ──────────────────────────────────────────────────────────────────
 const MANIFEST = {
