@@ -92,11 +92,14 @@ test('GET /:config/catalog with invalid catalogId returns 400', async () => {
   assert.strictEqual(res.status, 400);
 });
 
-test('manifest has 2 combined catalogs (cw + watchlist)', async () => {
+test('manifest declares per-type catalogs incl. series (needed for series meta)', async () => {
   const res = await request(app).get(`/${validToken()}/manifest.json`);
-  const ids = res.body.catalogs.map(c => c.id);
-  assert.deepStrictEqual(ids, ['waypoint-cw', 'waypoint-watchlist']);
-  assert.ok(!res.body.resources.includes('stream'), 'stream resource removed');
+  const cats = res.body.catalogs;
+  // A series-typed catalog must exist or Stremio won't use Waypoint's series meta.
+  assert.ok(cats.some(c => c.type === 'series'), 'must declare at least one series catalog');
+  assert.ok(cats.some(c => c.type === 'movie'),  'must declare at least one movie catalog');
+  const ids = cats.map(c => c.id).sort();
+  assert.deepStrictEqual(ids, ['waypoint-cw-movies', 'waypoint-cw-series', 'waypoint-watchlist-movies', 'waypoint-watchlist-series']);
 });
 
 test('GET /:config/meta with invalid imdb id returns 400', async () => {

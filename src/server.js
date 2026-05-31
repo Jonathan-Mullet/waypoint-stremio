@@ -23,7 +23,10 @@ app.use(express.json({ limit: '4kb' }));
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const VALID_TYPES    = new Set(['movie', 'series']);
-const VALID_CATALOGS = new Set(['waypoint-cw', 'waypoint-watchlist']);
+const VALID_CATALOGS = new Set([
+  'waypoint-cw-movies', 'waypoint-cw-series',
+  'waypoint-watchlist-movies', 'waypoint-watchlist-series',
+]);
 const IMDB_RE = /^tt\d{6,8}$/;
 
 // ── Rate limiting (keyed by sha256 of raw encoded blob — before decryption) ──
@@ -204,12 +207,16 @@ const MANIFEST = {
   version: VERSION,
   name: 'Waypoint',
   description: 'Resume hints and Continue Watching from Trakt. See exactly where to seek to pick up where you left off — across any Trakt-connected app.',
-  // Single combined catalog per feature (movies + series in one row). The catalog
-  // is declared under type 'movie' but each returned meta carries its own real
-  // type, so Stremio renders one mixed "Continue Watching" / "Watchlist" row.
+  // One catalog PER TYPE. Stremio only uses an addon's meta for a type when the
+  // addon declares a catalog of that type — so the series catalogs below are what
+  // make the series resume/up-next hint display (a single mixed-type catalog drops
+  // series back to Cinemeta's detail page, hiding the hint). Distinct names avoid
+  // the duplicate-row confusion.
   catalogs: [
-    { type: 'movie', id: 'waypoint-cw',        name: 'Continue Watching · Waypoint' },
-    { type: 'movie', id: 'waypoint-watchlist', name: 'Watchlist · Waypoint' },
+    { type: 'movie',  id: 'waypoint-cw-movies',        name: 'Continue Watching · Waypoint' },
+    { type: 'series', id: 'waypoint-cw-series',        name: 'Up Next · Waypoint' },
+    { type: 'movie',  id: 'waypoint-watchlist-movies', name: 'Movie Watchlist · Waypoint' },
+    { type: 'series', id: 'waypoint-watchlist-series', name: 'Show Watchlist · Waypoint' },
   ],
   resources: ['catalog', 'meta'],
   types: ['movie', 'series'],
@@ -247,12 +254,10 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
 
   try {
     const cfg = req.traktConfig;
-    // Combined row: movies first, then series, each meta carrying its own type.
-    // Playback/watchlist fetches are cached (shared), so the two calls cost one
-    // upstream request each per 30s/5min window.
-    const build = catalogId === 'waypoint-cw' ? buildContinueWatching : buildWatchlist;
-    const [movies, series] = await Promise.all([build(cfg, true), build(cfg, false)]);
-    const metas = [...movies, ...series];
+    const wantMovies = type === 'movie';
+    const metas = catalogId.includes('cw')
+      ? await buildContinueWatching(cfg, wantMovies)
+      : await buildWatchlist(cfg, wantMovies);
 
     res.set('Cache-Control', 'public, max-age=30');
     res.json({ metas });
