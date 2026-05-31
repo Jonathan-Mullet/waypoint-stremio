@@ -39,20 +39,72 @@ test('buildMeta: prepends resume hint for in-progress movie using baseMeta.runti
   assert.ok(meta.description.startsWith('▶ Trakt:'));
   assert.ok(meta.description.includes('45%'));
   assert.ok(meta.description.includes('A team of explorers.')); // original preserved
-  assert.ok(meta.description.includes('Resume ~'));             // time hint present (runtime=169 in baseMeta)
+  assert.ok(meta.description.includes('resume ~'));             // time hint present (runtime=169 in baseMeta)
   assert.strictEqual(cinemetaCallCount, 1, 'must only call Cinemeta once, extracting runtime from result');
 });
 
-test('buildMeta: series hint + episode marking in videos[]', async () => {
+const seriesMeta = () => ({ ...BASE_SERIES, videos: BASE_SERIES.videos.map(v => ({ ...v })) });
+
+test('buildMeta series: "Up next" from Trakt progress + marks that episode', async () => {
   _resetCachesForTesting();
   const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
-    _getPlayback: async () => [{ type: 'episode', imdb: 'tt0903747', season: 2, episode: 5, progress: 60 }],
-    _getCinemetaMeta: async () => ({ ...BASE_SERIES, videos: BASE_SERIES.videos.map(v => ({...v})) }),
+    _getProgress: async () => ({ completed: 4, aired: 62, next_episode: { season: 2, number: 5, title: 'Breakage' } }),
+    _getPlayback: async () => [],
+    _getCinemetaMeta: async () => seriesMeta(),
   });
-  assert.ok(meta.description.startsWith('▶ Trakt: S2E5'));
-  assert.ok(meta.description.includes('60%'));
+  assert.ok(meta.description.startsWith('▶ Trakt — Up next: S2E5'));
+  assert.ok(meta.description.includes('Breakage'));
   const ep = meta.videos.find(v => v.season === 2 && v.episode === 5);
-  assert.ok(ep.title.startsWith('▶ '));
+  assert.ok(ep.title.startsWith('▶ '), 'up-next episode marked in the list');
+});
+
+test('buildMeta series: up-next episode partway watched → Resume with %', async () => {
+  _resetCachesForTesting();
+  const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: async () => ({ completed: 4, aired: 62, next_episode: { season: 2, number: 5, title: 'Breakage' } }),
+    _getPlayback: async () => [{ type: 'episode', imdb: 'tt0903747', season: 2, episode: 5, progress: 60 }],
+    _getCinemetaMeta: async () => seriesMeta(),
+  });
+  assert.ok(meta.description.startsWith('▶ Trakt — Resume S2E5'));
+  assert.ok(meta.description.includes('60%'));
+  assert.ok(meta.description.includes('resume ~')); // runtime 47 present
+});
+
+test('buildMeta series: not started (completed 0) → null', async () => {
+  _resetCachesForTesting();
+  const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: async () => ({ completed: 0, aired: 62, next_episode: { season: 1, number: 1, title: 'Pilot' } }),
+    _getCinemetaMeta: async () => seriesMeta(),
+  });
+  assert.strictEqual(meta, null);
+});
+
+test('buildMeta series: caught up (no next_episode) → null', async () => {
+  _resetCachesForTesting();
+  const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: async () => ({ completed: 62, aired: 62, next_episode: null }),
+    _getCinemetaMeta: async () => seriesMeta(),
+  });
+  assert.strictEqual(meta, null);
+});
+
+test('buildMeta series: transient progress failure → null, NOT cached', async () => {
+  _resetCachesForTesting();
+  let mode = 'down';
+  const getProgress = async () => {
+    if (mode === 'down') throw new Error('Trakt 500');
+    return { completed: 4, aired: 62, next_episode: { season: 2, number: 5, title: 'Breakage' } };
+  };
+  const first = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: getProgress, _getPlayback: async () => [], _getCinemetaMeta: async () => seriesMeta(),
+  });
+  assert.strictEqual(first, null);
+  mode = 'up';
+  const second = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: getProgress, _getPlayback: async () => [], _getCinemetaMeta: async () => seriesMeta(),
+  });
+  assert.ok(second && second.description.includes('Up next: S2E5'),
+    'after recovery the hint appears — transient failure was not cached');
 });
 
 test('buildMeta: returns null when Cinemeta unavailable', async () => {

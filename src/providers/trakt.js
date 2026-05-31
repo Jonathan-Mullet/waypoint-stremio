@@ -93,4 +93,26 @@ async function getWatchlist(tokens, kind, { _fetch = fetch } = {}) {
   }).filter(Boolean);
 }
 
-module.exports = { startDeviceCode, pollDeviceToken, refreshToken, getPlayback, getWatchlist };
+// Watched progress for a single show (by IMDb id). Returns the "up next" episode
+// the user should watch — this is what tells them which episode/season to jump to,
+// covering both "resume the partial one" and "start the next after finishing".
+// Returns { completed, aired, last_watched_at, next_episode|null }.
+async function getShowProgress(tokens, imdb, { _fetch = fetch } = {}) {
+  const r = await _fetch(
+    `${TRAKT_API}/shows/${imdb}/progress/watched?hidden=false&specials=false&count_specials=false`,
+    { headers: _headers(tokens.client_id, tokens.access_token), signal: AbortSignal.timeout(10000) }
+  );
+  if (!r.ok) throw new Error(`Trakt progress HTTP ${r.status}`);
+  const d = await r.json();
+  const ne = d.next_episode;
+  return {
+    completed: d.completed || 0,
+    aired: d.aired || 0,
+    last_watched_at: d.last_watched_at || null,
+    next_episode: (ne && ne.season != null && ne.number != null)
+      ? { season: ne.season, number: ne.number, title: ne.title || '' }
+      : null,
+  };
+}
+
+module.exports = { startDeviceCode, pollDeviceToken, refreshToken, getPlayback, getWatchlist, getShowProgress };

@@ -10,7 +10,7 @@ function mockFetch(status, body) {
   }));
 }
 
-const { startDeviceCode, pollDeviceToken, refreshToken, getPlayback, getWatchlist } =
+const { startDeviceCode, pollDeviceToken, refreshToken, getPlayback, getWatchlist, getShowProgress } =
   require('../src/providers/trakt.js');
 
 test('startDeviceCode returns device flow data', async () => {
@@ -100,4 +100,21 @@ test('getWatchlist throws on invalid kind', async () => {
     () => getWatchlist({ client_id: 'id', access_token: 'tok' }, 'invalid'),
     /kind/i
   );
+});
+
+test('getShowProgress returns next_episode', async () => {
+  const _fetch = mockFetch(200, {
+    aired: 96, completed: 24, last_watched_at: '2026-05-30T06:23:00.000Z',
+    next_episode: { season: 1, number: 25, title: 'The World Seed' },
+  });
+  const r = await getShowProgress({ client_id: 'id', access_token: 'tok' }, 'tt2250192', { _fetch });
+  assert.strictEqual(r.completed, 24);
+  assert.deepStrictEqual(r.next_episode, { season: 1, number: 25, title: 'The World Seed' });
+});
+
+test('getShowProgress: null next_episode when caught up', async () => {
+  const _fetch = mockFetch(200, { aired: 96, completed: 96, next_episode: null });
+  const r = await getShowProgress({ client_id: 'id', access_token: 'tok' }, 'tt2250192', { _fetch });
+  assert.strictEqual(r.next_episode, null);
+  assert.strictEqual(r.completed, 96);
 });
