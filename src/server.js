@@ -22,11 +22,7 @@ const START_TIME = Date.now();
 app.use(express.json({ limit: '4kb' }));
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const VALID_TYPES    = new Set(['movie', 'series']); // meta resource types
-// Custom content type for the catalog so Stremio labels the row by this instead of
-// appending "- Movie". The row still returns movie + series metas (each routes by
-// its own type); meta resolution is unaffected (it keys off VALID_TYPES above).
-const CW_TYPE = 'Continue Watching';
+const VALID_TYPES    = new Set(['movie', 'series']);
 const VALID_CATALOGS = new Set(['waypoint-cw']);
 const IMDB_RE = /^tt\d{6,8}$/;
 
@@ -212,9 +208,10 @@ const MANIFEST = {
   // returns metas of BOTH types (each meta carries its own `type`, which is what
   // Stremio routes clicks on). Series meta still works because the meta resource
   // keys off the `types` array below, NOT off declaring a series catalog — verified
-  // in stremio-core's is_resource_supported.
+  // in stremio-core's is_resource_supported. (Custom content types were tried to drop
+  // Stremio's "- Movie" label but caused worse addon-name+type+name triple-labelling.)
   catalogs: [
-    { type: CW_TYPE, id: 'waypoint-cw', name: 'Continue Watching · Waypoint' },
+    { type: 'movie', id: 'waypoint-cw', name: 'Continue Watching · Waypoint' },
   ],
   resources: ['catalog', 'meta'],
   types: ['movie', 'series'],
@@ -238,7 +235,7 @@ app.get('/:config/manifest.json', addonCors, withConfig, (req, res) => {
 
 app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (req, res) => {
   const { type, catalogId } = req.params;
-  if (type !== CW_TYPE)               return res.status(400).json({ error: 'invalid type' });
+  if (!VALID_TYPES.has(type))         return res.status(400).json({ error: 'invalid type' });
   if (!VALID_CATALOGS.has(catalogId)) return res.status(400).json({ error: 'invalid catalog' });
 
   if (req.tokenExpired) {
