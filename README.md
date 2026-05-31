@@ -12,7 +12,7 @@ See exactly where to seek when picking up where you left off — across any Trak
 
 ## Install (hosted)
 
-1. Visit **waypoint.baby-beamup.club**
+1. Visit **https://41cf857f6e87-waypoint.baby-beamup.club**
 2. [Create a free Trakt API app](https://trakt.tv/oauth/applications/new) — redirect URI: `urn:ietf:wg:oauth:2.0:oob`
 3. Paste your Client ID and Secret → authorize → click "Install in Stremio"
 
@@ -27,13 +27,16 @@ No database. Each user's Trakt tokens are AES-256-GCM encrypted into the manifes
 ```bash
 git clone https://github.com/Jonathan-Mullet/waypoint-stremio
 cd waypoint-stremio
-export CIPHER_KEY=$(openssl rand -hex 32)   # 64 hex chars; store securely
+export CIPHER_KEY=$(openssl rand -hex 32)            # 64 hex chars; store securely
 export PORT=3000
+export PUBLIC_URL=https://your-addon.example.com    # the addon's public origin
 npm install --omit=dev
 npm start
 ```
 
 `CIPHER_KEY` must never change — rotating it invalidates all existing manifest URLs. Changing it is equivalent to logging out every user.
+
+`PUBLIC_URL` is the addon's public origin, used for the logo/poster/reconnect URLs. Set it whenever the app runs behind a reverse proxy that rewrites the `Host` header (e.g. Beamup). If unset, the addon falls back to the request `Host` header (fine for direct local access).
 
 ## Development
 
