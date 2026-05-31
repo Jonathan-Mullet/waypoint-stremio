@@ -88,7 +88,8 @@ test('GET /:config/catalog with invalid type returns 400', async () => {
 });
 
 test('GET /:config/catalog with invalid catalogId returns 400', async () => {
-  const res = await request(app).get(`/${validToken()}/catalog/movie/unknown-catalog.json`);
+  // Uses the valid (custom) content type so the request reaches the catalogId check.
+  const res = await request(app).get(`/${validToken()}/catalog/${encodeURIComponent('Continue Watching')}/unknown-catalog.json`);
   assert.strictEqual(res.status, 400);
 });
 
