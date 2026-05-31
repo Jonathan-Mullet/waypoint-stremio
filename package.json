@@ -1,0 +1,17 @@
+{
+  "name": "waypoint-stremio",
+  "version": "1.0.0",
+  "description": "Trakt resume hints and Continue Watching for Stremio",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  },
+  "engines": { "node": ">=20" }
+}
