@@ -136,12 +136,20 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
   // Video struct aliases `title`→`name` (same field); having BOTH triggers a serde
   // duplicate-field error that fails the entire series meta (Stremio then falls back
   // to Cinemeta, hiding the hint). Cinemeta sends episode titles in `name`.
-  const resumeByEp = new Map(); // "season:episode" → "60% — resume ~14m"
+  // Keep the most-recently-paused entry per episode (Trakt can hold several stale
+  // partials for the same episode) so the list % matches the description.
+  const newestByEp = new Map(); // "season:episode" → playback entry
   for (const p of playback) {
     if (p.type !== 'episode' || p.imdb !== imdbId || !(p.progress > 0 && p.progress < 100)) continue;
+    const key = `${p.season}:${p.episode}`;
+    const prev = newestByEp.get(key);
+    if (!prev || new Date(p.paused_at || 0) > new Date(prev.paused_at || 0)) newestByEp.set(key, p);
+  }
+  const resumeByEp = new Map(); // "season:episode" → "60% — resume ~14m"
+  for (const [key, p] of newestByEp) {
     const secs = minutes ? (p.progress / 100) * minutes * 60 : null;
     const timeHint = secs != null ? ` — resume ~${fmtResumeTime(secs)}` : '';
-    resumeByEp.set(`${p.season}:${p.episode}`, `${Math.round(p.progress)}%${timeHint}`);
+    resumeByEp.set(key, `${Math.round(p.progress)}%${timeHint}`);
   }
   if (Array.isArray(meta.videos)) {
     meta.videos = meta.videos.map(v => {
