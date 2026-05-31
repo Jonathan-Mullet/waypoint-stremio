@@ -183,11 +183,14 @@ async function withConfig(req, res, next) {
   }
 }
 
-// Derive the addon's own base URL / host from the incoming request, so logo,
-// poster, and reconnect-text URLs are always correct regardless of the deployed
-// domain (Beamup assigns a hash-prefixed subdomain; self-hosters use their own).
+// Derive the addon's own public host from the incoming request, so logo, poster,
+// and reconnect-text URLs are always correct regardless of the deployed domain
+// (Beamup assigns a hash-prefixed subdomain; self-hosters use their own).
+// Behind Beamup's proxy the Host header is rewritten to the internal Dokku app
+// name, so prefer X-Forwarded-Host (the real public host) and fall back to Host.
 // Stremio requires addons to be served over https, so the protocol is fixed.
-const baseUrl = (req) => `https://${req.get('host')}`;
+const hostOf = (req) => req.get('x-forwarded-host') || req.get('host');
+const baseUrl = (req) => `https://${hostOf(req)}`;
 
 // ── Manifest ──────────────────────────────────────────────────────────────────
 const MANIFEST = {
@@ -211,7 +214,7 @@ const MANIFEST = {
 app.options('/:config/*', addonCors, (_req, res) => res.sendStatus(204));
 
 app.get('/:config/manifest.json', addonCors, withConfig, (req, res) => {
-  if (req.tokenExpired) return res.status(400).json({ error: `token expired — reconnect at ${req.get('host')}` });
+  if (req.tokenExpired) return res.status(400).json({ error: `token expired — reconnect at ${hostOf(req)}` });
   res.set('Cache-Control', 'public, max-age=300');
   res.json({ ...MANIFEST, logo: `${baseUrl(req)}/logo.svg` });
 });
@@ -226,7 +229,7 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
       id: 'waypoint-reconnect', type,
       name: '⚠️ Waypoint: Trakt connection expired',
       poster: `${baseUrl(req)}/logo.svg`,
-      description: `Visit ${req.get('host')} to reconnect.`,
+      description: `Visit ${hostOf(req)} to reconnect.`,
     }]});
   }
 
@@ -244,7 +247,7 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
         id: 'waypoint-expiry-warning', type,
         name: `⚠️ Waypoint: token expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
         poster: `${baseUrl(req)}/logo.svg`,
-        description: `Visit ${req.get('host')} to reconnect before this date.`,
+        description: `Visit ${hostOf(req)} to reconnect before this date.`,
       }, ...metas];
     }
 
@@ -254,7 +257,7 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
     if (e.code === 'TOKEN_EXPIRED') return res.json({ metas: [{
       id: 'waypoint-reconnect', type,
       name: '⚠️ Waypoint: Trakt token revoked', poster: `${baseUrl(req)}/logo.svg`,
-      description: `Visit ${req.get('host')} to reconnect.`,
+      description: `Visit ${hostOf(req)} to reconnect.`,
     }]});
     log('error', 'catalog error', { catalogId, msg: e.message });
     res.json({ metas: [] });
