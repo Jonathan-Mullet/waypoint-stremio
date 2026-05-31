@@ -53,6 +53,17 @@
     <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:4px;">Or copy the install URL manually:</p>
     <div class="url-box" id="install-url"></div>
     <button class="copy-btn" onclick="copy('install-url')">Copy install URL</button>
+
+    <div class="warning" style="border-color:#4caf7d;background:#0f2a1c;">
+      ⭐ <strong>One required step for resume hints:</strong> move Waypoint
+      <strong>above Cinemeta</strong> in your addon order, otherwise Stremio shows Cinemeta's
+      details and Waypoint's resume hint never appears. Use the
+      <a class="link" href="https://stremio-addon-manager.vercel.app" target="_blank">Stremio Addon Manager ↗</a>:
+      sign in, drag <strong>Waypoint</strong> near the top (above Cinemeta), then click
+      <strong>Sync to Stremio</strong>. Reordering also refreshes Stremio's cache, so do this
+      again any time the hint stops updating.
+    </div>
+
     <hr>
     <p style="font-size:.8rem;color:var(--text-dim);">
       Reconnect later — saves your Client ID (you will need to re-enter your Client Secret):

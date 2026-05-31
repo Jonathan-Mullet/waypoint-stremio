@@ -83,13 +83,20 @@ test('GET /:config/manifest.json with expired token returns 400', async () => {
 });
 
 test('GET /:config/catalog with invalid type returns 400', async () => {
-  const res = await request(app).get(`/${validToken()}/catalog/badtype/waypoint-cw-movies.json`);
+  const res = await request(app).get(`/${validToken()}/catalog/badtype/waypoint-cw.json`);
   assert.strictEqual(res.status, 400);
 });
 
 test('GET /:config/catalog with invalid catalogId returns 400', async () => {
   const res = await request(app).get(`/${validToken()}/catalog/movie/unknown-catalog.json`);
   assert.strictEqual(res.status, 400);
+});
+
+test('manifest has 2 combined catalogs (cw + watchlist)', async () => {
+  const res = await request(app).get(`/${validToken()}/manifest.json`);
+  const ids = res.body.catalogs.map(c => c.id);
+  assert.deepStrictEqual(ids, ['waypoint-cw', 'waypoint-watchlist']);
+  assert.ok(!res.body.resources.includes('stream'), 'stream resource removed');
 });
 
 test('GET /:config/meta with invalid imdb id returns 400', async () => {

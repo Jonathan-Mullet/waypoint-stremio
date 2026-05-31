@@ -5,7 +5,6 @@ const { resolveConfig, encryptConfig } = require('./config');
 const { startDeviceCode, pollDeviceToken } = require('./providers/trakt');
 const { buildContinueWatching, buildWatchlist } = require('./catalog');
 const { buildMeta } = require('./meta');
-const { buildResumeStream } = require('./stream');
 const { log } = require('./utils');
 
 // ── Startup validation ────────────────────────────────────────────────────────
@@ -24,10 +23,7 @@ app.use(express.json({ limit: '4kb' }));
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const VALID_TYPES    = new Set(['movie', 'series']);
-const VALID_CATALOGS = new Set([
-  'waypoint-cw-movies', 'waypoint-cw-series',
-  'waypoint-watchlist-movies', 'waypoint-watchlist-series',
-]);
+const VALID_CATALOGS = new Set(['waypoint-cw', 'waypoint-watchlist']);
 const IMDB_RE = /^tt\d{6,8}$/;
 
 // ── Rate limiting (keyed by sha256 of raw encoded blob — before decryption) ──
@@ -208,13 +204,14 @@ const MANIFEST = {
   version: VERSION,
   name: 'Waypoint',
   description: 'Resume hints and Continue Watching from Trakt. See exactly where to seek to pick up where you left off — across any Trakt-connected app.',
+  // Single combined catalog per feature (movies + series in one row). The catalog
+  // is declared under type 'movie' but each returned meta carries its own real
+  // type, so Stremio renders one mixed "Continue Watching" / "Watchlist" row.
   catalogs: [
-    { type: 'movie',  id: 'waypoint-cw-movies',        name: 'Continue Watching' },
-    { type: 'series', id: 'waypoint-cw-series',        name: 'Continue Watching' },
-    { type: 'movie',  id: 'waypoint-watchlist-movies', name: 'Watchlist' },
-    { type: 'series', id: 'waypoint-watchlist-series', name: 'Watchlist' },
+    { type: 'movie', id: 'waypoint-cw',        name: 'Continue Watching' },
+    { type: 'movie', id: 'waypoint-watchlist', name: 'Watchlist' },
   ],
-  resources: ['catalog', 'meta', 'stream'],
+  resources: ['catalog', 'meta'],
   types: ['movie', 'series'],
   idPrefixes: ['tt'],
   // configurable: shows a "Configure" gear that opens <base>/<config>/configure
@@ -250,10 +247,12 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
 
   try {
     const cfg = req.traktConfig;
-    const wantMovies = catalogId.includes('movies');
-    const metas = catalogId.includes('cw')
-      ? await buildContinueWatching(cfg, wantMovies)
-      : await buildWatchlist(cfg, wantMovies);
+    // Combined row: movies first, then series, each meta carrying its own type.
+    // Playback/watchlist fetches are cached (shared), so the two calls cost one
+    // upstream request each per 30s/5min window.
+    const build = catalogId === 'waypoint-cw' ? buildContinueWatching : buildWatchlist;
+    const [movies, series] = await Promise.all([build(cfg, true), build(cfg, false)]);
+    const metas = [...movies, ...series];
 
     res.set('Cache-Control', 'public, max-age=30');
     res.json({ metas });
@@ -281,25 +280,6 @@ app.get('/:config/meta/:type/:id.json', addonCors, withConfig, async (req, res) 
   } catch (e) {
     log('error', 'meta failed', { id, msg: e.message });
     res.json({ meta: null });
-  }
-});
-
-// stream/:type/:id.json — surface a visible "▶ Resume at ~X" entry at the top of
-// the stream list for in-progress titles. id is "tt123" (movie) or "tt123:S:E".
-const STREAM_ID_RE = /^tt\d{6,8}(?::\d{1,4}:\d{1,4})?$/;
-app.get('/:config/stream/:type/:id.json', addonCors, withConfig, async (req, res) => {
-  const { type, id } = req.params;
-  if (!VALID_TYPES.has(type)) return res.status(400).json({ error: 'invalid type' });
-  if (!STREAM_ID_RE.test(id)) return res.status(400).json({ error: 'invalid id' });
-  if (req.tokenExpired)       return res.json({ streams: [] });
-
-  try {
-    const result = await buildResumeStream(req.traktConfig, type, id);
-    res.set('Cache-Control', 'public, max-age=30');
-    res.json(result);
-  } catch (e) {
-    log('error', 'stream failed', { id, msg: e.message });
-    res.json({ streams: [] });
   }
 });
 
