@@ -208,10 +208,10 @@ const MANIFEST = {
   name: 'Waypoint',
   description: 'Resume hints and Continue Watching from Trakt. See exactly where to seek to pick up where you left off — across any Trakt-connected app.',
   catalogs: [
-    { type: 'movie',  id: 'waypoint-cw-movies',        name: 'Waypoint — Continue Watching' },
-    { type: 'series', id: 'waypoint-cw-series',        name: 'Waypoint — Continue Watching' },
-    { type: 'movie',  id: 'waypoint-watchlist-movies', name: 'Waypoint — Watchlist' },
-    { type: 'series', id: 'waypoint-watchlist-series', name: 'Waypoint — Watchlist' },
+    { type: 'movie',  id: 'waypoint-cw-movies',        name: 'Continue Watching' },
+    { type: 'series', id: 'waypoint-cw-series',        name: 'Continue Watching' },
+    { type: 'movie',  id: 'waypoint-watchlist-movies', name: 'Watchlist' },
+    { type: 'series', id: 'waypoint-watchlist-series', name: 'Watchlist' },
   ],
   resources: ['catalog', 'meta'],
   types: ['movie', 'series'],
@@ -250,20 +250,9 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
   try {
     const cfg = req.traktConfig;
     const wantMovies = catalogId.includes('movies');
-    let metas = catalogId.includes('cw')
+    const metas = catalogId.includes('cw')
       ? await buildContinueWatching(cfg, wantMovies)
       : await buildWatchlist(cfg, wantMovies);
-
-    // Prepend expiry warning card if within 14 days
-    if (cfg.expiringWarning && catalogId.includes('cw')) {
-      const daysLeft = Math.ceil((cfg.expires_at - Date.now()) / 86400_000);
-      metas = [{
-        id: 'waypoint-expiry-warning', type,
-        name: `⚠️ Waypoint: token expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
-        poster: `${baseUrl(req)}/logo.svg`,
-        description: `Visit ${hostOf(req)} to reconnect before this date.`,
-      }, ...metas];
-    }
 
     res.set('Cache-Control', 'public, max-age=30');
     res.json({ metas });

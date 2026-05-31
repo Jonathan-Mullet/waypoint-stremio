@@ -8,6 +8,11 @@ const { deriveUserKey } = require('../src/config.js');
 const KEY = 'a'.repeat(64);
 process.env.CIPHER_KEY = KEY;
 
+// Keep tests hermetic: the expired-token path reaches resolveConfig through the
+// HTTP layer where we can't inject a refresh fn, so stub the module-level one to
+// fail fast instead of calling the real Trakt API.
+require('../src/config.js')._setRefreshForTesting(async () => { throw new Error('no network in tests'); });
+
 const app = require('../src/server.js');
 
 function validToken(overrides = {}) {
