@@ -93,6 +93,25 @@ async function getWatchlist(tokens, kind, { _fetch = fetch } = {}) {
   }).filter(Boolean);
 }
 
+// Recently-watched history (completed items), newest first. Used to backlog the
+// Continue Watching row so its "See All" view is a rich recency-ordered list.
+async function getHistory(tokens, { limit = 100, _fetch = fetch } = {}) {
+  const r = await _fetch(`${TRAKT_API}/sync/history?limit=${limit}&extended=full`, {
+    headers: _headers(tokens.client_id, tokens.access_token),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!r.ok) throw new Error(`Trakt history HTTP ${r.status}`);
+  return (await r.json()).map(it => {
+    const base = { watched_at: it.watched_at };
+    if (it.type === 'movie' && it.movie?.ids?.imdb)
+      return { ...base, type: 'movie', imdb: it.movie.ids.imdb, title: it.movie.title, year: it.movie.year };
+    if (it.type === 'episode' && it.show?.ids?.imdb)
+      return { ...base, type: 'episode', imdb: it.show.ids.imdb, title: it.show.title,
+        season: it.episode.season, episode: it.episode.number, episode_title: it.episode.title };
+    return null;
+  }).filter(Boolean);
+}
+
 // Watched progress for a single show (by IMDb id). Returns the "up next" episode
 // the user should watch — this is what tells them which episode/season to jump to,
 // covering both "resume the partial one" and "start the next after finishing".
@@ -115,4 +134,4 @@ async function getShowProgress(tokens, imdb, { _fetch = fetch } = {}) {
   };
 }
 
-module.exports = { startDeviceCode, pollDeviceToken, refreshToken, getPlayback, getWatchlist, getShowProgress };
+module.exports = { startDeviceCode, pollDeviceToken, refreshToken, getPlayback, getWatchlist, getShowProgress, getHistory };

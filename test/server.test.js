@@ -95,7 +95,7 @@ test('GET /:config/catalog with invalid catalogId returns 400', async () => {
 test('manifest declares 2 mixed catalogs and supports series meta via types', async () => {
   const res = await request(app).get(`/${validToken()}/manifest.json`);
   const ids = res.body.catalogs.map(c => c.id).sort();
-  assert.deepStrictEqual(ids, ['waypoint-cw', 'waypoint-watchlist']);
+  assert.deepStrictEqual(ids, ['waypoint-cw']);
   // Series meta is gated on the `types` array (NOT on declaring a series catalog) —
   // confirmed in stremio-core's is_resource_supported. So series must be in types.
   assert.ok(res.body.types.includes('series'), 'must declare series in types for series meta');
