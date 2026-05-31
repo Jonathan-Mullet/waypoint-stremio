@@ -275,7 +275,10 @@ app.get('/:config/meta/:type/:id.json', addonCors, withConfig, async (req, res) 
 
   try {
     const meta = await buildMeta(req.traktConfig, type, id);
-    res.set('Cache-Control', `public, max-age=${meta ? 60 : 300}`);
+    // Short TTLs: resume hints change as you watch, and a "no hint" result should
+    // flip to a hint quickly once a show is started — keeps stale results from
+    // lingering in Stremio/Cloudflare caches.
+    res.set('Cache-Control', `public, max-age=${meta ? 30 : 90}`);
     res.json({ meta: meta || null });
   } catch (e) {
     log('error', 'meta failed', { id, msg: e.message });
