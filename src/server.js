@@ -28,7 +28,6 @@ const VALID_CATALOGS = new Set([
   'waypoint-watchlist-movies', 'waypoint-watchlist-series',
 ]);
 const IMDB_RE = /^tt\d{6,8}$/;
-const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
 // ── Rate limiting (keyed by sha256 of raw encoded blob — before decryption) ──
 // Because rate-limiting runs BEFORE decryption, any distinct valid-charset config
