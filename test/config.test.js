@@ -89,6 +89,25 @@ test('resolveConfig: expired token + failing refresh → TOKEN_EXPIRED', async (
   assert.strictEqual(err.code, 'TOKEN_EXPIRED');
 });
 
+test('resolveConfig: concurrent refreshes for one user collapse into a single Trakt call', async () => {
+  _resetTokenCacheForTesting();
+  const enc = encryptConfig(makeConfig({ expires_at: Date.now() - 1000 }));
+  let calls = 0;
+  const _refresh = async () => {
+    calls++;
+    await new Promise(r => setTimeout(r, 20)); // latency so the parallel calls overlap
+    return { access_token: 'shared_acc', refresh_token: 'rotated_ref', expires_at: Date.now() + DAY };
+  };
+  // Stremio fires the catalog + several meta requests at once — simulate that burst.
+  const results = await Promise.all([
+    resolveConfig(enc, { _refresh }),
+    resolveConfig(enc, { _refresh }),
+    resolveConfig(enc, { _refresh }),
+  ]);
+  assert.strictEqual(calls, 1, 'concurrent refreshes must share one refresh (Trakt rotates the token)');
+  for (const r of results) assert.strictEqual(r.access_token, 'shared_acc');
+});
+
 test('resolveConfig: a refreshed token is cached and reused without re-refreshing', async () => {
   _resetTokenCacheForTesting();
   const cfg = makeConfig({ expires_at: Date.now() - 1000 });

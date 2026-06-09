@@ -19,11 +19,31 @@ const _tokenCache = createCache({ maxSize: 50000, ttlMs: 90 * 24 * 60 * 60 * 100
 // Refresh when the access token has less than this much life left.
 const REFRESH_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
+// In-flight refreshes, keyed by user_key, to dedupe concurrent refreshes. Stremio
+// fires the catalog + several meta requests in PARALLEL; without this each would call
+// Trakt's refresh with the same refresh_token, but Trakt rotates the refresh token on
+// first use — so all but the first would fail with an already-consumed token (and, if
+// the embedded access token is also expired, surface a spurious "reconnect"). Sharing
+// one refresh per user_key means concurrent callers all receive the single rotated pair.
+const _inflightRefresh = new Map();
+
+function _refreshShared(userKey, args, _refresh) {
+  let p = _inflightRefresh.get(userKey);
+  if (!p) {
+    p = Promise.resolve()
+      .then(() => _refresh(args))
+      .then((fresh) => { _tokenCache.set(userKey, fresh); return fresh; })
+      .finally(() => { _inflightRefresh.delete(userKey); });
+    _inflightRefresh.set(userKey, p);
+  }
+  return p;
+}
+
 // Refresh implementation — overridable so tests stay hermetic (no real Trakt calls
 // when resolveConfig is reached through the HTTP layer). Defaults to the real one.
 let _refreshImpl = refreshToken;
 function _setRefreshForTesting(fn) { _refreshImpl = fn; }
-function _resetTokenCacheForTesting() { _tokenCache.reset(); }
+function _resetTokenCacheForTesting() { _tokenCache.reset(); _inflightRefresh.clear(); }
 
 // Compute user_key from an access_token. Called at encryption time so the key is
 // stable for the life of the install regardless of later token rotation.
@@ -73,15 +93,16 @@ async function resolveConfig(encoded, { _refresh = _refreshImpl } = {}) {
     }
   }
 
-  // Refresh when the access token is expired or about to expire.
+  // Refresh when the access token is expired or about to expire. Concurrent requests
+  // for the same user share ONE refresh (see _refreshShared) so the rotated refresh
+  // token isn't consumed by a race.
   if (expires_at - Date.now() < REFRESH_THRESHOLD_MS) {
     try {
-      const fresh = await _refresh({
+      const fresh = await _refreshShared(config.user_key, {
         client_id: config.client_id,
         client_secret: config.client_secret,
         refresh_token,
-      });
-      _tokenCache.set(config.user_key, fresh);
+      }, _refresh);
       access_token = fresh.access_token;
       expires_at = fresh.expires_at;
     } catch (e) {
