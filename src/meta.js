@@ -56,11 +56,12 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
   // Two complementary Trakt signals, fetched tolerantly:
   //   /sync/playback        → the partially-watched episode you're mid-way through
   //                           (the resume point — this is what "Continue Watching" uses)
-  //   /shows/.../progress   → the next episode to start AFTER cleanly-finished ones
-  // Active watchers who rely on Stremio's partial scrobbling have NO completed marks
-  // (completed=0) but DO have a live resume point, so playback is the PRIMARY source.
-  // Watched-progress only wins when the resume point is stale (behind what you've
-  // already watched) or to suppress the hint entirely when you're fully caught up.
+  //   /shows/.../progress   → the next episode to start AFTER cleanly-finished ones,
+  //                           plus the per-episode `watched` set
+  // Active watchers who rely on partial scrobbling have NO completed marks (completed=0)
+  // but DO have a live resume point, so playback is the PRIMARY source. Watched-progress
+  // only wins when the resume point is stale (behind what you've already watched) or to
+  // suppress the hint entirely when fully caught up.
   let progress = null, progressOk = true;
   try { progress = await _getProgress(tokens, imdbId); }
   catch { progressOk = false; }
@@ -72,22 +73,39 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
   // Both sources down → don't cache a negative; let the next request retry.
   if (!progressOk && !playbackOk) return null;
 
-  // Fully caught up (every aired episode watched, nothing up next) → show a "watched /
-  // caught up" marker so finished shows still get a hint, ignoring any stale resume
-  // point Trakt may have left behind.
+  // Per-episode completed set (authoritative + order-independent). Drives the ✓ marks
+  // and lets a finished episode override any stale leftover playback partial.
+  const watchedSet = new Set((progress && progress.watched) || []);
+
+  // In-progress partials for this show, newest entry per episode, EXCLUDING any episode
+  // Trakt already marks completed (a finished episode with a leftover resume point is
+  // done, not "in progress" — this also guards against scrobblers that never clear the
+  // playback point on completion). "season:episode" → playback entry.
+  const newestByEp = new Map();
+  for (const p of playback) {
+    if (p.type !== 'episode' || p.imdb !== imdbId || !(p.progress > 0 && p.progress < 100)) continue;
+    const key = `${p.season}:${p.episode}`;
+    if (watchedSet.has(key)) continue;
+    const prev = newestByEp.get(key);
+    if (!prev || new Date(p.paused_at || 0) > new Date(prev.paused_at || 0)) newestByEp.set(key, p);
+  }
+
+  // Fully caught up (every aired episode watched, nothing up next) → "caught up" marker,
+  // and ✓ every episode in the list. Ignores any stale resume point Trakt left behind.
   if (progress && progress.completed > 0 && !progress.next_episode) {
     const baseMeta = await _getCinemetaMeta('series', imdbId);
     if (!baseMeta) return null;
     const n = progress.aired || progress.completed;
     const meta = { ...baseMeta };
     meta.description = `✓ Trakt — Caught up · all ${n} episode${n === 1 ? '' : 's'} watched\n\n${baseMeta.description || ''}`.trim();
+    meta.videos = _annotateEpisodes(meta.videos, { watchedSet, partials: new Map(), targetKey: null, targetIsResume: false });
     _metaCache.set(cacheKey, meta);
     return meta;
   }
 
-  // Resume point: the most-recently-paused in-progress episode for this show.
-  const resume = playback
-    .filter(x => x.type === 'episode' && x.imdb === imdbId && x.progress > 0 && x.progress < 100)
+  // Resume point: the most-recently-paused in-progress episode (already excludes any
+  // episode Trakt marks completed).
+  const resume = [...newestByEp.values()]
     .sort((a, b) => new Date(b.paused_at || 0) - new Date(a.paused_at || 0))[0] || null;
 
   // Up-next: only meaningful once at least one episode is cleanly watched.
@@ -129,41 +147,45 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
   const meta = { ...baseMeta };
   meta.description = `${resumeLine}\n\n${baseMeta.description || ''}`.trim();
 
-  // Annotate the episode list itself so the resume hint travels with each episode —
-  // users shouldn't have to memorise the show-level hint. Every in-progress episode
-  // gets its own "· 60% — resume ~14m"; the up-next target also gets the ▶ prefix.
-  // CRITICAL: only ever modify the existing `name` field — never add `title`. Stremio's
-  // Video struct aliases `title`→`name` (same field); having BOTH triggers a serde
-  // duplicate-field error that fails the entire series meta (Stremio then falls back
-  // to Cinemeta, hiding the hint). Cinemeta sends episode titles in `name`.
-  // Keep the most-recently-paused entry per episode (Trakt can hold several stale
-  // partials for the same episode) so the list % matches the description.
-  const newestByEp = new Map(); // "season:episode" → playback entry
-  for (const p of playback) {
-    if (p.type !== 'episode' || p.imdb !== imdbId || !(p.progress > 0 && p.progress < 100)) continue;
-    const key = `${p.season}:${p.episode}`;
-    const prev = newestByEp.get(key);
-    if (!prev || new Date(p.paused_at || 0) > new Date(prev.paused_at || 0)) newestByEp.set(key, p);
-  }
-  const resumeByEp = new Map(); // "season:episode" → "60% — resume ~14m"
+  // Per-episode resume strings ("60% — resume ~14m") for the in-progress (non-completed)
+  // episodes, so the list shows where each partial sits.
+  const partials = new Map(); // "season:episode" → "60% — resume ~14m"
   for (const [key, p] of newestByEp) {
     const secs = minutes ? (p.progress / 100) * minutes * 60 : null;
     const timeHint = secs != null ? ` — resume ~${fmtResumeTime(secs)}` : '';
-    resumeByEp.set(key, `${Math.round(p.progress)}%${timeHint}`);
+    partials.set(key, `${Math.round(p.progress)}%${timeHint}`);
   }
-  if (Array.isArray(meta.videos)) {
-    meta.videos = meta.videos.map(v => {
-      const resumeInfo = resumeByEp.get(`${v.season}:${v.episode}`);
-      if (resumeInfo) return { ...v, name: `▶ ${v.name || `S${v.season}E${v.episode}`} · ${resumeInfo}` };
-      if (Number(v.season) === Number(season) && Number(v.episode) === Number(number)) {
-        return { ...v, name: `▶ ${v.name || label}` };
-      }
-      return v;
-    });
-  }
+  meta.videos = _annotateEpisodes(meta.videos, {
+    watchedSet, partials, targetKey: `${season}:${number}`, targetIsResume: isResume,
+  });
 
   _metaCache.set(cacheKey, meta);
   return meta;
+}
+
+// Annotate each episode in Cinemeta's videos list with exactly one status glyph:
+//   ▶  the single actionable target (resume %, or up-next) — at most ONE
+//   ✓  watched (Trakt marks it completed) — wins over any lingering partial
+//   ◐  a different in-progress episode, with its %
+//   (unchanged)  not started
+// CRITICAL: only ever MODIFY the existing `name` field — never add `title`. Stremio's
+// Video struct aliases `title`→`name` (same field); having both triggers a serde
+// duplicate-field error that fails the entire series meta (Stremio falls back to
+// Cinemeta, hiding the hint). Cinemeta sends episode titles in `name`.
+function _annotateEpisodes(videos, { watchedSet, partials, targetKey, targetIsResume }) {
+  if (!Array.isArray(videos)) return videos;
+  return videos.map(v => {
+    const key = `${v.season}:${v.episode}`;
+    const base = v.name || `S${v.season}E${v.episode}`;
+    if (targetKey && key === targetKey) {
+      const info = targetIsResume ? partials.get(key) : null;
+      return { ...v, name: info ? `▶ ${base} · ${info}` : `▶ ${base}` };
+    }
+    if (watchedSet.has(key)) return { ...v, name: `✓ ${base}` };
+    const info = partials.get(key);
+    if (info) return { ...v, name: `◐ ${base} · ${info}` };
+    return v;
+  });
 }
 
 // Compare two (season, episode) pairs. >0 if a is after b, 0 if equal, <0 if before.

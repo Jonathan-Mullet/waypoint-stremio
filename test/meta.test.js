@@ -87,11 +87,60 @@ test('buildMeta series: each in-progress episode carries its own resume hint in 
   assert.ok(e25.name.startsWith('▶ ') && e25.name.includes('60%'), e25.name);
   assert.ok(!e25.name.includes('10%'), 'must not use the stale duplicate: ' + e25.name);
   assert.ok(e25.name.includes('resume ~'), e25.name);
-  // A second in-progress episode is annotated too — not just the chosen one.
-  assert.ok(e11.name.startsWith('▶ ') && e11.name.includes('25%'), e11.name);
+  // A second in-progress episode is annotated with the ◐ (partial) glyph — only the
+  // chosen target gets the ▶ arrow.
+  assert.ok(e11.name.startsWith('◐ ') && e11.name.includes('25%'), e11.name);
+  assert.ok(!e11.name.startsWith('▶ '), 'only the one target gets the arrow: ' + e11.name);
   // Regression guard: still never add a colliding `title` field.
   assert.strictEqual(e25.title, undefined);
   assert.strictEqual(e11.title, undefined);
+});
+
+test('buildMeta series: watched episodes get ✓, only the target gets ▶', async () => {
+  _resetCachesForTesting();
+  const base = () => ({
+    ...BASE_SERIES, runtime: 47,
+    videos: [
+      { id: 'a', season: 1, episode: 1, name: 'Pilot' },
+      { id: 'b', season: 1, episode: 2, name: 'Cat in the Bag' },
+      { id: 'c', season: 2, episode: 5, name: 'Breakage' },
+    ],
+  });
+  const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: async () => ({ completed: 2, aired: 62, next_episode: { season: 2, number: 5, title: 'Breakage' }, watched: ['1:1', '1:2'] }),
+    _getPlayback: async () => [],
+    _getCinemetaMeta: async () => base(),
+  });
+  const e11 = meta.videos.find(v => v.season === 1 && v.episode === 1);
+  const e12 = meta.videos.find(v => v.season === 1 && v.episode === 2);
+  const e25 = meta.videos.find(v => v.season === 2 && v.episode === 5);
+  assert.ok(e11.name.startsWith('✓ '), 'watched episode gets ✓: ' + e11.name);
+  assert.ok(e12.name.startsWith('✓ '), 'watched episode gets ✓: ' + e12.name);
+  assert.ok(e25.name.startsWith('▶ '), 'up-next target gets ▶: ' + e25.name);
+  for (const v of meta.videos) assert.strictEqual(v.title, undefined);
+});
+
+test('buildMeta series: a completed episode with a stale partial shows ✓ (not ▶/◐) and is not the resume target', async () => {
+  // The tesla-stremio scrobbler bug: an episode is completed in Trakt but a stale
+  // playback partial lingers. The completed mark must win — the episode shows ✓, the
+  // leftover % is ignored, and it is NOT surfaced as the resume point.
+  _resetCachesForTesting();
+  const base = () => ({
+    ...BASE_SERIES, runtime: 47,
+    videos: [
+      { id: 'a', season: 1, episode: 1, name: 'Pilot' },
+      { id: 'c', season: 2, episode: 5, name: 'Breakage' },
+    ],
+  });
+  const meta = await buildMeta(TOKENS, 'series', 'tt0903747', {
+    _getProgress: async () => ({ completed: 1, aired: 62, next_episode: { season: 2, number: 5, title: 'Breakage' }, watched: ['1:1'] }),
+    _getPlayback: async () => [{ type: 'episode', imdb: 'tt0903747', season: 1, episode: 1, progress: 62, paused_at: '2026-06-01T00:00:00Z' }],
+    _getCinemetaMeta: async () => base(),
+  });
+  assert.ok(meta.description.startsWith('▶ Trakt — Up next: S2E5'), meta.description);
+  const e11 = meta.videos.find(v => v.season === 1 && v.episode === 1);
+  assert.ok(e11.name.startsWith('✓ '), 'completed episode shows ✓ despite the stale partial: ' + e11.name);
+  assert.ok(!e11.name.includes('62%'), 'stale % must not leak onto a completed episode: ' + e11.name);
 });
 
 test('buildMeta series: up-next episode partway watched → Resume with %', async () => {

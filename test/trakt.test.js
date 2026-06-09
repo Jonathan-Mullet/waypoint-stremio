@@ -102,19 +102,28 @@ test('getWatchlist throws on invalid kind', async () => {
   );
 });
 
-test('getShowProgress returns next_episode', async () => {
+test('getShowProgress returns next_episode + per-episode watched set', async () => {
   const _fetch = mockFetch(200, {
     aired: 96, completed: 24, last_watched_at: '2026-05-30T06:23:00.000Z',
     next_episode: { season: 1, number: 25, title: 'The World Seed' },
+    seasons: [
+      { number: 1, episodes: [
+        { number: 1, completed: true },
+        { number: 2, completed: true },
+        { number: 3, completed: false },
+      ] },
+    ],
   });
   const r = await getShowProgress({ client_id: 'id', access_token: 'tok' }, 'tt2250192', { _fetch });
   assert.strictEqual(r.completed, 24);
   assert.deepStrictEqual(r.next_episode, { season: 1, number: 25, title: 'The World Seed' });
+  assert.deepStrictEqual(r.watched, ['1:1', '1:2'], 'only completed episodes, as "season:number"');
 });
 
-test('getShowProgress: null next_episode when caught up', async () => {
+test('getShowProgress: null next_episode + empty watched when no seasons present', async () => {
   const _fetch = mockFetch(200, { aired: 96, completed: 96, next_episode: null });
   const r = await getShowProgress({ client_id: 'id', access_token: 'tok' }, 'tt2250192', { _fetch });
   assert.strictEqual(r.next_episode, null);
   assert.strictEqual(r.completed, 96);
+  assert.deepStrictEqual(r.watched, []);
 });

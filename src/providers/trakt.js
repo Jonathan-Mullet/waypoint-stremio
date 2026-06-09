@@ -114,8 +114,11 @@ async function getHistory(tokens, { limit = 100, _fetch = fetch } = {}) {
 
 // Watched progress for a single show (by IMDb id). Returns the "up next" episode
 // the user should watch — this is what tells them which episode/season to jump to,
-// covering both "resume the partial one" and "start the next after finishing".
-// Returns { completed, aired, last_watched_at, next_episode|null }.
+// covering both "resume the partial one" and "start the next after finishing" — plus
+// `watched`, the per-episode completed set ("season:number" strings). The watched set
+// is order-independent, so it correctly marks episodes for non-sequential viewers and
+// lets a completed episode override any stale lingering playback partial.
+// Returns { completed, aired, last_watched_at, next_episode|null, watched: string[] }.
 async function getShowProgress(tokens, imdb, { _fetch = fetch } = {}) {
   const r = await _fetch(
     `${TRAKT_API}/shows/${imdb}/progress/watched?hidden=false&specials=false&count_specials=false`,
@@ -124,6 +127,15 @@ async function getShowProgress(tokens, imdb, { _fetch = fetch } = {}) {
   if (!r.ok) throw new Error(`Trakt progress HTTP ${r.status}`);
   const d = await r.json();
   const ne = d.next_episode;
+  const watched = [];
+  if (Array.isArray(d.seasons)) {
+    for (const s of d.seasons) {
+      if (!Array.isArray(s.episodes) || s.number == null) continue;
+      for (const ep of s.episodes) {
+        if (ep.completed && ep.number != null) watched.push(`${s.number}:${ep.number}`);
+      }
+    }
+  }
   return {
     completed: d.completed || 0,
     aired: d.aired || 0,
@@ -131,6 +143,7 @@ async function getShowProgress(tokens, imdb, { _fetch = fetch } = {}) {
     next_episode: (ne && ne.season != null && ne.number != null)
       ? { season: ne.season, number: ne.number, title: ne.title || '' }
       : null,
+    watched,
   };
 }
 
