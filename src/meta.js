@@ -20,13 +20,12 @@ async function buildMeta(tokens, type, imdbId, opts = {}) {
   if (cached !== undefined) return cached === NULL_SENTINEL ? null : cached;
 
   const _getPlayback     = opts._getPlayback     || (t => playbackCache.getPlaybackCached(t));
-  const _getCinemetaMeta = opts._getCinemetaMeta || ((t, id) => cinemeta.getMeta(t, id));
+  const _getCinemetaMeta = opts._getCinemetaMeta || ((mtype, id) => cinemeta.getMeta(mtype, id));
   const _getProgress     = opts._getProgress     || ((t, id) => trakt.getShowProgress(t, id));
 
-  const result = type === 'movie'
+  return type === 'movie'
     ? await _buildMovie(tokens, imdbId, cacheKey, _getPlayback, _getCinemetaMeta)
     : await _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemetaMeta, _getProgress);
-  return result;
 }
 
 async function _buildMovie(tokens, imdbId, cacheKey, _getPlayback, _getCinemetaMeta) {
@@ -104,9 +103,11 @@ async function _buildSeries(tokens, imdbId, cacheKey, _getPlayback, _getCinemeta
   }
 
   // Resume point: the most-recently-paused in-progress episode (already excludes any
-  // episode Trakt marks completed).
-  const resume = [...newestByEp.values()]
-    .sort((a, b) => new Date(b.paused_at || 0) - new Date(a.paused_at || 0))[0] || null;
+  // episode Trakt marks completed). Linear max scan — cheaper than sorting the whole set.
+  let resume = null;
+  for (const p of newestByEp.values()) {
+    if (!resume || new Date(p.paused_at || 0) > new Date(resume.paused_at || 0)) resume = p;
+  }
 
   // Up-next: only meaningful once at least one episode is cleanly watched.
   const nextUp = (progress && progress.completed > 0 && progress.next_episode) ? progress.next_episode : null;

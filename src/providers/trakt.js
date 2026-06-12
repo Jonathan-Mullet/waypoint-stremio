@@ -77,6 +77,8 @@ async function getPlayback(tokens, { _fetch = fetch } = {}) {
   }).filter(Boolean);
 }
 
+// getWatchlist is part of the HistoryProvider interface (see module JSDoc above) and is
+// exported for future callers, but is not currently consumed inside this codebase.
 async function getWatchlist(tokens, kind, { _fetch = fetch } = {}) {
   if (kind !== 'movies' && kind !== 'shows') throw new Error(`invalid kind: ${kind}`);
   const r = await _fetch(`${TRAKT_API}/users/me/watchlist/${kind}?extended=full&limit=100`, {

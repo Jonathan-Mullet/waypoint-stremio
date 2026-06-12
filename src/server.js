@@ -133,6 +133,8 @@ app.get('/:config/configure', (_req, res) => res.sendFile(_onboardingPage));
 // ── OAuth API (no CORS — same-origin from config page) ───────────────────────
 app.post('/api/oauth/start', oauthLimiter, async (req, res) => {
   const { client_id, client_secret } = req.body || {};
+  // Validate client_secret here even though Trakt's device/code endpoint doesn't require
+  // it yet — fail early so the user sees the error before the device code expires.
   if (!client_id || !client_secret) return res.status(400).json({ error: 'missing fields' });
   try {
     res.json(await startDeviceCode(client_id));
@@ -198,6 +200,17 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
 const baseUrl = (req) => PUBLIC_URL || `https://${req.get('host')}`;
 const hostOf = (req) => PUBLIC_URL ? PUBLIC_URL.replace(/^https?:\/\//, '') : req.get('host');
 
+// Build a single-item catalog response that prompts the user to reconnect.
+// name varies by reason ("connection expired" vs "token revoked"), but the body is identical.
+function _reconnectMeta(req, type, name) {
+  return {
+    id: 'waypoint-reconnect', type,
+    name,
+    poster: `${baseUrl(req)}/logo.png`,
+    description: `Visit ${hostOf(req)} to reconnect.`,
+  };
+}
+
 // ── Manifest ──────────────────────────────────────────────────────────────────
 const MANIFEST = {
   id: 'io.github.waypoint-stremio',
@@ -257,12 +270,7 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
   if (!VALID_CATALOGS.has(catalogId)) return res.status(400).json({ error: 'invalid catalog' });
 
   if (req.tokenExpired) {
-    return res.json({ metas: [{
-      id: 'waypoint-reconnect', type,
-      name: '⚠️ Waypoint: Trakt connection expired',
-      poster: `${baseUrl(req)}/logo.png`,
-      description: `Visit ${hostOf(req)} to reconnect.`,
-    }]});
+    return res.json({ metas: [_reconnectMeta(req, type, '⚠️ Waypoint: Trakt connection expired')] });
   }
 
   try {
@@ -272,11 +280,7 @@ app.get('/:config/catalog/:type/:catalogId.json', addonCors, withConfig, async (
     res.set('Cache-Control', 'public, max-age=30');
     res.json({ metas });
   } catch (e) {
-    if (e.code === 'TOKEN_EXPIRED') return res.json({ metas: [{
-      id: 'waypoint-reconnect', type,
-      name: '⚠️ Waypoint: Trakt token revoked', poster: `${baseUrl(req)}/logo.png`,
-      description: `Visit ${hostOf(req)} to reconnect.`,
-    }]});
+    if (e.code === 'TOKEN_EXPIRED') return res.json({ metas: [_reconnectMeta(req, type, '⚠️ Waypoint: Trakt token revoked')] });
     log('error', 'catalog error', { catalogId, msg: e.message });
     res.json({ metas: [] });
   }
